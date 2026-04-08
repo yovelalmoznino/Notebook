@@ -4,6 +4,7 @@ import android.view.MotionEvent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -16,6 +17,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
+import androidx.compose.ui.input.pointer.RequestDisallowInterceptTouchEvent
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.unit.dp
 import com.example.notebook.data.model.ShapeType
@@ -35,44 +37,39 @@ fun DrawingCanvas(
     onAction: (MotionEvent) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val requestDisallowInterceptTouchEvent = remember { RequestDisallowInterceptTouchEvent() }
+
     Canvas(
         modifier = modifier
             .fillMaxSize()
-            .pointerInteropFilter { event ->
+            // התיקון הקריטי כאן: העברת ה-requestDisallowInterceptTouchEvent חזרה פנימה
+            .pointerInteropFilter(requestDisallowInterceptTouchEvent = requestDisallowInterceptTouchEvent) { event ->
                 if (activeTool == CanvasTool.IMAGE) return@pointerInteropFilter false
 
                 val toolType = event.getToolType(0)
+                val isStylus = toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER
+                val isLassoWithFinger = toolType == MotionEvent.TOOL_TYPE_FINGER && activeTool == CanvasTool.LASSO
 
-                // הלוגיקה המקורית שעבדה:
-                // עט = צייר (true), אצבע = גלול (false)
-                if (toolType == MotionEvent.TOOL_TYPE_STYLUS ||
-                    toolType == MotionEvent.TOOL_TYPE_ERASER) {
-                    onAction(event)
-                    true
-                } else if (toolType == MotionEvent.TOOL_TYPE_FINGER) {
-                    // אצבע עם לאסו - צייר את הלאסו
-                    if (activeTool == CanvasTool.LASSO) {
-                        onAction(event)
-                        true
-                    } else {
-                        false // אצבע רגילה = גלול
+                if (isStylus || isLassoWithFinger) {
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                            requestDisallowInterceptTouchEvent.invoke(true)
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_UP -> {
+                            requestDisallowInterceptTouchEvent.invoke(false)
+                        }
                     }
-                } else {
                     onAction(event)
                     true
+                } else {
+                    false // אצבע רגילה תאפשר גלילה של המסך
                 }
             }
     ) {
-        // שכבה 1: סטרוקים רגילים (ללא הנבחרים)
         strokes.forEach { drawStrokePath(it, Offset.Zero) }
-
-        // שכבה 2: סטרוקים נבחרים (בעמדתם הנוכחית)
         selectedStrokes.forEach { drawStrokePath(it, dragOffset) }
-
-        // שכבה 3: סטרוק בזמן ציור
         currentStroke?.let { drawStrokePath(it, Offset.Zero) }
 
-        // שכבה 4: מסגרת לאסו
         if (lassoPath.size > 1) {
             val path = Path().apply {
                 moveTo(lassoPath[0].x, lassoPath[0].y)
