@@ -1,5 +1,10 @@
 package com.example.notebook.data.model
 
+import com.example.notebook.data.db.entity.PageEntity
+
+// הגדרת כלי הציור (חיוני לפתרון רוב השגיאות)
+enum class CanvasTool { PEN, HIGHLIGHTER, ERASER, SHAPE, LASSO, IMAGE }
+
 enum class PageBackground { PLAIN, LINES, GRID, DOTS }
 
 enum class ShapeType { FREEHAND, LINE, RECTANGLE, CIRCLE, TRIANGLE, ARROW, STAR }
@@ -32,4 +37,12 @@ data class CanvasImage(
     val y: Float,
     val width: Float,
     val height: Float
+)
+
+// המודל שמחבר בין הדף מהדאטהבייס לתוכן הציור (חיוני ל-ViewModel)
+data class PageUiModel(
+    val page: PageEntity,
+    val strokes: List<Stroke>,
+    val images: List<CanvasImage>,
+    val background: PageBackground
 )

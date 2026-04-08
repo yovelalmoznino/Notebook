@@ -11,9 +11,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -62,7 +59,7 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
             CenterAlignedTopAppBar(
                 title = {
                     Row(
-                        modifier = Modifier.background(Color.White.copy(alpha = 0.8f), RoundedCornerShape(24.dp)).padding(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.background(Color.White.copy(alpha = 0.8f), RoundedCornerShape(24.dp)).padding(horizontal = 12.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -103,7 +100,12 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
                         ToolButton(Icons.Rounded.Image, uiState.activeTool == CanvasTool.IMAGE) { if (uiState.activeTool == CanvasTool.IMAGE) imagePicker.launch("image/*") else viewModel.setActiveTool(CanvasTool.IMAGE) }
                     }
                 },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, null) } }
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, null) } },
+                actions = {
+                    if (uiState.hasLassoSelection) {
+                        IconButton(onClick = { viewModel.deleteLassoSelection() }) { Icon(Icons.Rounded.Delete, null, tint = Color.Red) }
+                    }
+                }
             )
         }
     ) { padding ->
@@ -138,7 +140,7 @@ fun PageContainer(page: PageUiModel, uiState: CanvasUiState, viewModel: CanvasVi
     Box(modifier = Modifier.padding(16.dp).fillMaxWidth().aspectRatio(0.7f).shadow(8.dp).background(Color.White).clipToBounds()) {
         BackgroundCanvas(page.background)
 
-        // שכבת הציור
+        // הפרדת שכבות חכמה למניעת חסימת מגע
         val drawingLayer = @Composable {
             DrawingCanvas(
                 activeTool = uiState.activeTool,
@@ -151,7 +153,6 @@ fun PageContainer(page: PageUiModel, uiState: CanvasUiState, viewModel: CanvasVi
             )
         }
 
-        // שכבת התמונות
         val imagesLayer = @Composable {
             page.images.forEach { img ->
                 ResizableDraggableImage(img, uiState.activeTool == CanvasTool.IMAGE) { nx, ny, nw, nh ->
@@ -224,7 +225,7 @@ fun ToolButton(icon: ImageVector, isActive: Boolean, onClick: () -> Unit) {
 @Composable
 fun TemplateSelectionDialog(onDismiss: () -> Unit, onSelect: (PageBackground) -> Unit) {
     AlertDialog(
-        onDismissRequest = onDismiss, confirmButton = {}, title = { Text("Page Template") },
+        onDismissRequest = onDismiss, confirmButton = {}, title = { Text("Template") },
         text = { Column { PageBackground.values().forEach { type -> TextButton(onClick = { onSelect(type) }, modifier = Modifier.fillMaxWidth()) { Text(type.name) } } } }
     )
 }
@@ -283,8 +284,8 @@ fun BackgroundCanvas(backgroundType: PageBackground, modifier: Modifier = Modifi
         when (backgroundType) {
             PageBackground.LINES -> { var curY = spacing; while (curY < size.height) { drawLine(lineColor, Offset(0f, curY), Offset(size.width, curY), 1.dp.toPx()); curY += spacing } }
             PageBackground.GRID -> {
-                var curY = spacing; while (curY < size.height) { drawLine(lineColor, Offset(0f, curY), Offset(size.width, curY), 1.dp.toPx()); curY += spacing }
-                var curX = spacing; while (curX < size.width) { drawLine(lineColor, Offset(curX, 0f), Offset(curX, size.height), 1.dp.toPx()); curX += spacing }
+                var curY = spacing; while (curY < size.height) { drawLine(lineColor, Offset(0f, y), Offset(size.width, y), 1.dp.toPx()); curY += spacing }
+                var curX = spacing; while (curX < size.width) { drawLine(lineColor, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx()); curX += spacing }
             }
             PageBackground.DOTS -> { for (x in (spacing.toInt()..size.width.toInt() step spacing.toInt())) for (y in (spacing.toInt()..size.height.toInt() step spacing.toInt())) drawCircle(lineColor, 2f, Offset(x.toFloat(), y.toFloat())) }
             else -> {}
