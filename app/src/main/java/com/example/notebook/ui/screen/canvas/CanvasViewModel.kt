@@ -269,16 +269,22 @@ class CanvasViewModel @Inject constructor(
     }
 
     private fun finishStroke(pageId: Long) {
-        _uiState.value.currentStroke?.let { s ->
-            viewModelScope.launch(Dispatchers.IO) {
-                val pageModel = _uiState.value.pages.find { it.page.id == pageId } ?: return@launch
-                val updatedStrokes = pageModel.strokes + s
-                repository.updatePage(
-                    pageModel.page.copy(strokeDataJson = gson.toJson(updatedStrokes))
-                )
-                refreshPagesFromDb()
-                _uiState.update { it.copy(currentStroke = null, drawingPageId = null) }
-            }
+        val strokeToSave = _uiState.value.currentStroke ?: return
+        // מנקה מיד ב-Main thread — מונע ציור כפול
+        _uiState.update { it.copy(currentStroke = null, drawingPageId = null) }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            // קורא ישירות מה-DB — לא מה-StateFlow שיכול להיות ישן
+            val pages = repository.getPages(notebookId)
+            val page = pages.find { it.id == pageId } ?: return@launch
+            val strokeListType = object : TypeToken<List<Stroke>>() {}.type
+            val existingStrokes: List<Stroke> = try {
+                gson.fromJson(page.strokeDataJson, strokeListType) ?: emptyList()
+            } catch (_: Exception) { emptyList() }
+            repository.updatePage(
+                page.copy(strokeDataJson = gson.toJson(existingStrokes + strokeToSave))
+            )
+            refreshPagesFromDb()
         }
     }
 
