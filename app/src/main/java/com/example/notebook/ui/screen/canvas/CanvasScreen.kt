@@ -1,16 +1,13 @@
 package com.example.notebook.ui.screen.canvas
 
 import android.content.Intent
-import android.view.KeyEvent as AndroidKeyEvent
-import android.view.View
+import android.view.MotionEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,14 +35,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.example.notebook.data.model.CanvasImage
-import com.example.notebook.data.model.PageBackground
-import com.example.notebook.data.model.ShapeType
+import com.example.notebook.data.model.*
 import com.example.notebook.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -56,37 +51,10 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
     val uiState by viewModel.uiState.collectAsState()
     var toolToConfigure by remember { mutableStateOf<CanvasTool?>(null) }
     var selectedPageForTemplate by remember { mutableStateOf<Long?>(null) }
-    var showShapeMenu by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
-    val view = LocalView.current
-
-    // שיטה חסינה לזיהוי הכפתור בעט: מאזין ישיר ל-View
-    // פותר את בעיית ה-nativeKeyEvent ומתאים ללנובו קוד 600
-    DisposableEffect(view) {
-        // הבטחה שה-View יכול לקבל פוקוס ואירועי מקלדת
-        view.isFocusableInTouchMode = true
-        view.requestFocus()
-
-        val listener = View.OnKeyListener { _, keyCode, event ->
-            if (keyCode == 600) {
-                if (event.action == AndroidKeyEvent.ACTION_DOWN) {
-                    viewModel.setStylusButtonState(true)
-                } else if (event.action == AndroidKeyEvent.ACTION_UP) {
-                    viewModel.setStylusButtonState(false)
-                }
-                true
-            } else false
-        }
-        view.setOnKeyListener(listener)
-        onDispose { view.setOnKeyListener(null) }
-    }
-
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let {
-            try { context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (e: Exception) {}
-            viewModel.addImage(it.toString())
-        }
+        uri?.let { viewModel.addImage(it.toString()) }
     }
 
     Scaffold(
@@ -94,204 +62,151 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
             CenterAlignedTopAppBar(
                 title = {
                     Row(
-                        modifier = Modifier.background(Color.White.copy(alpha = 0.5f), RoundedCornerShape(16.dp)).padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.background(Color.White.copy(alpha = 0.8f), RoundedCornerShape(24.dp)).padding(horizontal = 12.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        ToolButton(Icons.Rounded.Edit, uiState.activeTool == CanvasTool.PEN) { if (uiState.activeTool == CanvasTool.PEN) toolToConfigure = CanvasTool.PEN else viewModel.setActiveTool(CanvasTool.PEN) }
-                        ToolButton(Icons.Rounded.Brush, uiState.activeTool == CanvasTool.HIGHLIGHTER) { if (uiState.activeTool == CanvasTool.HIGHLIGHTER) toolToConfigure = CanvasTool.HIGHLIGHTER else viewModel.setActiveTool(CanvasTool.HIGHLIGHTER) }
-                        ToolButton(Icons.Rounded.AutoFixHigh, uiState.activeTool == CanvasTool.ERASER) { viewModel.setActiveTool(CanvasTool.ERASER) }
-                        Box {
-                            val shapeIcon = when(uiState.activeShape) { ShapeType.LINE -> Icons.Rounded.Remove; ShapeType.RECTANGLE -> Icons.Rounded.CheckBoxOutlineBlank; ShapeType.CIRCLE -> Icons.Rounded.RadioButtonUnchecked; else -> Icons.Rounded.Category }
-                            ToolButton(shapeIcon, uiState.activeTool == CanvasTool.SHAPE) { if (uiState.activeTool == CanvasTool.SHAPE) toolToConfigure = CanvasTool.SHAPE else showShapeMenu = true }
-                            DropdownMenu(expanded = showShapeMenu, onDismissRequest = { showShapeMenu = false }) {
-                                DropdownMenuItem(text = { Text("Straight Line") }, onClick = { viewModel.setShapeMode(ShapeType.LINE); showShapeMenu = false }, leadingIcon = { Icon(Icons.Rounded.Remove, null) })
-                                DropdownMenuItem(text = { Text("Rectangle") }, onClick = { viewModel.setShapeMode(ShapeType.RECTANGLE); showShapeMenu = false }, leadingIcon = { Icon(Icons.Rounded.CheckBoxOutlineBlank, null) })
-                                DropdownMenuItem(text = { Text("Circle") }, onClick = { viewModel.setShapeMode(ShapeType.CIRCLE); showShapeMenu = false }, leadingIcon = { Icon(Icons.Rounded.RadioButtonUnchecked, null) })
+                        ToolButtonWithMenu(
+                            icon = Icons.Rounded.Edit,
+                            isActive = uiState.activeTool == CanvasTool.PEN,
+                            onClick = { if (uiState.activeTool == CanvasTool.PEN) toolToConfigure = CanvasTool.PEN else viewModel.setActiveTool(CanvasTool.PEN) }
+                        ) {
+                            PenType.values().forEach { type ->
+                                DropdownMenuItem(text = { Text(type.name) }, onClick = { viewModel.setPenType(type) })
                             }
                         }
-                        Spacer(modifier = Modifier.height(24.dp).width(1.dp).background(Color.Gray.copy(alpha = 0.3f)))
-                        ToolButton(Icons.Rounded.Gesture, uiState.activeTool == CanvasTool.LASSO) { viewModel.setActiveTool(CanvasTool.LASSO) }
-                        ToolButton(Icons.Rounded.Image, uiState.activeTool == CanvasTool.IMAGE) {
-                            if (uiState.activeTool == CanvasTool.IMAGE) imagePicker.launch("image/*") else viewModel.setActiveTool(CanvasTool.IMAGE)
+
+                        ToolButtonWithMenu(
+                            icon = Icons.Rounded.Brush,
+                            isActive = uiState.activeTool == CanvasTool.HIGHLIGHTER,
+                            onClick = { if (uiState.activeTool == CanvasTool.HIGHLIGHTER) toolToConfigure = CanvasTool.HIGHLIGHTER else viewModel.setActiveTool(CanvasTool.HIGHLIGHTER) }
+                        ) {
+                            MarkerShape.values().forEach { shape ->
+                                DropdownMenuItem(text = { Text("${shape.name} Tip") }, onClick = { viewModel.setMarkerShape(shape) })
+                            }
                         }
+
+                        ToolButton(Icons.Rounded.AutoFixHigh, uiState.activeTool == CanvasTool.ERASER) { viewModel.setActiveTool(CanvasTool.ERASER) }
+
+                        ToolButtonWithMenu(
+                            icon = when(uiState.activeShape) { ShapeType.STAR -> Icons.Rounded.Star; ShapeType.TRIANGLE -> Icons.Rounded.ChangeHistory; else -> Icons.Rounded.Category },
+                            isActive = uiState.activeTool == CanvasTool.SHAPE,
+                            onClick = { if (uiState.activeTool == CanvasTool.SHAPE) toolToConfigure = CanvasTool.SHAPE else viewModel.setActiveTool(CanvasTool.SHAPE) }
+                        ) {
+                            ShapeType.values().filter { it != ShapeType.FREEHAND }.forEach { type ->
+                                DropdownMenuItem(text = { Text(type.name) }, onClick = { viewModel.setShapeMode(type) })
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(1.dp).height(24.dp).background(Color.LightGray))
+                        ToolButton(Icons.Rounded.Gesture, uiState.activeTool == CanvasTool.LASSO) { viewModel.setActiveTool(CanvasTool.LASSO) }
+                        ToolButton(Icons.Rounded.Image, uiState.activeTool == CanvasTool.IMAGE) { if (uiState.activeTool == CanvasTool.IMAGE) imagePicker.launch("image/*") else viewModel.setActiveTool(CanvasTool.IMAGE) }
                     }
                 },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "Back") } },
-                actions = {
-                    if (uiState.hasLassoSelection) {
-                        IconButton(onClick = { viewModel.copyLassoSelection() }) { Icon(Icons.Rounded.ContentCopy, "Copy", tint = ToolbarIcon) }
-                        IconButton(onClick = { viewModel.deleteLassoSelection() }) { Icon(Icons.Rounded.Delete, "Delete", tint = Color.Red) }
-                        IconButton(onClick = { viewModel.clearLassoSelection() }) { Icon(Icons.Rounded.Close, "Clear", tint = ToolbarIcon) }
-                    } else if (uiState.copiedStrokes.isNotEmpty() || uiState.copiedImages.isNotEmpty()) {
-                        IconButton(onClick = { uiState.pages.firstOrNull()?.page?.id?.let { viewModel.pasteClipboard(it) } }) { Icon(Icons.Rounded.ContentPaste, "Paste", tint = ToolbarIcon) }
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = PastelSurface)
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, null) } }
             )
         }
     ) { padding ->
         toolToConfigure?.let { tool ->
-            val initialColor = when(tool) { CanvasTool.HIGHLIGHTER -> uiState.highlighterColor; CanvasTool.SHAPE -> uiState.shapeColor; else -> uiState.penColor }
-            val initialWidth = when(tool) { CanvasTool.HIGHLIGHTER -> uiState.highlighterWidth; CanvasTool.SHAPE -> uiState.shapeWidth; else -> uiState.penWidth }
             ColorPickerAndWidthDialog(
-                title = "Tool Settings", initialColor = Color(initialColor), initialWidth = initialWidth,
-                onDismiss = { toolToConfigure = null }, onSave = { c, w -> viewModel.updateToolSettings(c.toArgb(), w, tool); toolToConfigure = null }
+                title = "Settings: ${tool.name}",
+                initialColor = Color(if (tool == CanvasTool.HIGHLIGHTER) uiState.highlighterColor else if (tool == CanvasTool.SHAPE) uiState.shapeColor else uiState.penColor),
+                initialWidth = if (tool == CanvasTool.HIGHLIGHTER) uiState.highlighterWidth else if (tool == CanvasTool.SHAPE) uiState.shapeWidth else uiState.penWidth,
+                onDismiss = { toolToConfigure = null },
+                onSave = { c, w -> viewModel.updateToolSettings(c.toArgb(), w, tool); toolToConfigure = null }
             )
+        }
+
+        LazyColumn(modifier = Modifier.fillMaxSize().padding(padding).background(PastelBackground)) {
+            items(uiState.pages, key = { it.page.id }) { pageModel ->
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    IconButton(onClick = { selectedPageForTemplate = pageModel.page.id }) { Icon(Icons.Rounded.Settings, null) }
+                    PageContainer(pageModel, uiState, viewModel)
+                }
+            }
+            item { Button(onClick = { viewModel.addNewPage() }, modifier = Modifier.padding(24.dp).fillMaxWidth()) { Text("Add New Page") } }
         }
 
         if (selectedPageForTemplate != null) {
             TemplateSelectionDialog(onDismiss = { selectedPageForTemplate = null }, onSelect = { viewModel.updatePageBackground(selectedPageForTemplate!!, it); selectedPageForTemplate = null })
         }
-
-        LazyColumn(modifier = Modifier.fillMaxSize().padding(padding).background(PastelBackground), horizontalAlignment = Alignment.CenterHorizontally) {
-            items(uiState.pages, key = { it.page.id }) { pageModel ->
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    IconButton(onClick = { selectedPageForTemplate = pageModel.page.id }) { Icon(Icons.Rounded.Settings, "Page Settings", tint = ToolbarIcon) }
-                    Box(modifier = Modifier.padding(bottom = 32.dp, start = 16.dp, end = 16.dp).fillMaxWidth().aspectRatio(0.7f).shadow(8.dp, RoundedCornerShape(4.dp)).background(Color.White).clipToBounds()) {
-
-                        BackgroundCanvas(backgroundType = pageModel.background)
-
-                        val displayImages = if (uiState.selectionPageId == pageModel.page.id) {
-                            pageModel.images.filterNot { img -> uiState.selectedImages.any { it.id == img.id } } + uiState.selectedImages
-                        } else pageModel.images
-
-                        displayImages.forEach { img ->
-                            ResizableDraggableImage(
-                                img = img,
-                                isActive = uiState.activeTool == CanvasTool.IMAGE,
-                                onUpdate = { nx, ny, nw, nh -> viewModel.updateImageBounds(pageModel.page.id, img.id, nx, ny, nw, nh) }
-                            )
-                        }
-
-                        val baseStrokes = if (uiState.selectionPageId == pageModel.page.id) {
-                            pageModel.strokes.filterNot { s -> s.id in uiState.hiddenStrokeIds }
-                        } else {
-                            pageModel.strokes
-                        }
-
-                        val activeSelectedStrokes = if (uiState.selectionPageId == pageModel.page.id) {
-                            uiState.selectedStrokes
-                        } else {
-                            emptyList()
-                        }
-
-                        DrawingCanvas(
-                            activeTool = uiState.activeTool,
-                            strokes = baseStrokes,
-                            selectedStrokes = activeSelectedStrokes,
-                            dragOffset = Offset.Zero,
-                            currentStroke = if (uiState.drawingPageId == pageModel.page.id) uiState.currentStroke else null,
-                            lassoPath = if (uiState.drawingPageId == pageModel.page.id || uiState.selectionPageId == pageModel.page.id) uiState.lassoPath else emptyList(),
-                            onAction = { event -> viewModel.handleMotionEvent(pageModel.page.id, event) }
-                        )
-                    }
-                }
-            }
-            item {
-                Button(onClick = { viewModel.addNewPage() }, modifier = Modifier.padding(32.dp)) { Icon(Icons.Rounded.Add, null); Spacer(Modifier.width(8.dp)); Text("Add Page") }
-            }
-        }
     }
 }
 
 @Composable
-fun BackgroundCanvas(backgroundType: PageBackground, modifier: Modifier = Modifier.fillMaxSize()) {
-    Canvas(modifier = modifier) {
-        val lineColor = Color.LightGray.copy(alpha = 0.5f)
-        val spacing = 40.dp.toPx()
-        when (backgroundType) {
-            PageBackground.LINES -> { var y = spacing; while (y < size.height) { drawLine(lineColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx()); y += spacing } }
-            PageBackground.GRID -> {
-                var y = spacing; while (y < size.height) { drawLine(lineColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx()); y += spacing }
-                var x = spacing; while (x < size.width) { drawLine(lineColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx()); x += spacing }
-            }
-            PageBackground.DOTS -> { for (x in (spacing.toInt()..size.width.toInt() step spacing.toInt())) { for (y in (spacing.toInt()..size.height.toInt() step spacing.toInt())) { drawCircle(lineColor, radius = 2f, center = Offset(x.toFloat(), y.toFloat())) } } }
-            PageBackground.PLAIN -> {}
-        }
-    }
-}
+fun PageContainer(page: PageUiModel, uiState: CanvasUiState, viewModel: CanvasViewModel) {
+    Box(modifier = Modifier.padding(16.dp).fillMaxWidth().aspectRatio(0.7f).shadow(8.dp).background(Color.White).clipToBounds()) {
+        BackgroundCanvas(page.background)
 
-@Composable
-fun ResizableDraggableImage(img: CanvasImage, isActive: Boolean, onUpdate: (Float, Float, Float, Float) -> Unit) {
-    val context = LocalContext.current
-    var bitmap by remember(img.id) { mutableStateOf<ImageBitmap?>(null) }
-    var x by remember { mutableStateOf(img.x) }
-    var y by remember { mutableStateOf(img.y) }
-    var w by remember { mutableStateOf(img.width) }
-    var h by remember { mutableStateOf(img.height) }
-
-    LaunchedEffect(img.x, img.y, img.width, img.height) { x = img.x; y = img.y; w = img.width; h = img.height }
-
-    LaunchedEffect(img.uri) {
-        withContext(Dispatchers.IO) {
-            try {
-                val uri = android.net.Uri.parse(img.uri)
-                val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, options) }
-                options.inSampleSize = calculateInSampleSize(options, 800, 800)
-                options.inJustDecodeBounds = false
-                context.contentResolver.openInputStream(uri)?.use { val b = android.graphics.BitmapFactory.decodeStream(it, null, options); bitmap = b?.asImageBitmap() }
-            } catch (e: Exception) {}
-        }
-    }
-
-    Box(modifier = Modifier.offset { IntOffset(x.toInt(), y.toInt()) }.size(with(LocalDensity.current) { w.toDp() }, with(LocalDensity.current) { h.toDp() })) {
-        bitmap?.let {
-            Image(bitmap = it, contentDescription = null, contentScale = ContentScale.FillBounds,
-                modifier = Modifier.fillMaxSize().pointerInput(isActive) {
-                    if (isActive) { detectDragGestures(onDragEnd = { onUpdate(x, y, w, h) }) { change, dragAmount -> change.consume(); x += dragAmount.x; y += dragAmount.y } }
-                }
+        // שכבת הציור
+        val drawingLayer = @Composable {
+            DrawingCanvas(
+                activeTool = uiState.activeTool,
+                strokes = if (uiState.selectionPageId == page.page.id) page.strokes.filterNot { it.id in uiState.hiddenStrokeIds } else page.strokes,
+                selectedStrokes = if (uiState.selectionPageId == page.page.id) uiState.selectedStrokes else emptyList(),
+                dragOffset = Offset.Zero,
+                currentStroke = if (uiState.drawingPageId == page.page.id) uiState.currentStroke else null,
+                lassoPath = if (uiState.drawingPageId == page.page.id || uiState.selectionPageId == page.page.id) uiState.lassoPath else emptyList(),
+                onAction = { event -> viewModel.handleMotionEvent(page.page.id, event) }
             )
         }
-        if (isActive) {
-            Box(modifier = Modifier.fillMaxSize().border(2.dp, ToolbarIconActive))
-            Box(modifier = Modifier.align(Alignment.BottomEnd).offset(12.dp, 12.dp).size(32.dp).background(ToolbarIconActive, CircleShape).border(2.dp, Color.White, CircleShape).pointerInput(Unit) {
-                detectDragGestures(onDragEnd = { onUpdate(x, y, w, h) }) { change, dragAmount -> change.consume(); w = (w + dragAmount.x).coerceAtLeast(100f); h = (h + dragAmount.y).coerceAtLeast(100f) }
-            })
+
+        // שכבת התמונות
+        val imagesLayer = @Composable {
+            page.images.forEach { img ->
+                ResizableDraggableImage(img, uiState.activeTool == CanvasTool.IMAGE) { nx, ny, nw, nh ->
+                    viewModel.updateImageBounds(page.page.id, img.id, nx, ny, nw, nh)
+                }
+            }
+        }
+
+        if (uiState.activeTool == CanvasTool.IMAGE) {
+            drawingLayer()
+            imagesLayer()
+        } else {
+            imagesLayer()
+            drawingLayer()
         }
     }
 }
 
 @Composable
-fun ToolButton(icon: ImageVector, isActive: Boolean, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.background(if (isActive) PastelBackground else Color.Transparent, CircleShape)) { Icon(icon, null, tint = if (isActive) ToolbarIconActive else ToolbarIcon) }
+fun ToolButtonWithMenu(icon: ImageVector, isActive: Boolean, onClick: () -> Unit, menuContent: @Composable ColumnScope.() -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { onClick(); if (isActive) expanded = true }, modifier = Modifier.background(if (isActive) Color.White else Color.Transparent, CircleShape).border(if (isActive) 1.dp else 0.dp, Color.LightGray, CircleShape)) {
+            Icon(icon, null, tint = if (isActive) Color.Black else Color.Gray)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, content = menuContent)
+    }
 }
 
 @Composable
 fun ColorPickerAndWidthDialog(title: String, initialColor: Color, initialWidth: Float, onDismiss: () -> Unit, onSave: (Color, Float) -> Unit) {
     var selectedColor by remember { mutableStateOf(initialColor) }
     var width by remember { mutableStateOf(initialWidth) }
-    val colorPalette = remember {
-        val grid = mutableListOf<Color>()
-        val grays = listOf(0xFFFFFFFF, 0xFFE0E0E0, 0xFFCCCCCC, 0xFFB3B3B3, 0xFF999999, 0xFF808080, 0xFF666666, 0xFF4D4D4D, 0xFF333333, 0xFF1A1A1A, 0xFF000000)
-        grid.addAll(grays.map { Color(it) })
-        val lightnessLevels = listOf(Pair(0.15f, 1.0f), Pair(0.35f, 1.0f), Pair(0.55f, 1.0f), Pair(1.0f, 1.0f), Pair(1.0f, 0.75f), Pair(1.0f, 0.5f))
-        val hues = listOf(180f, 200f, 220f, 260f, 300f, 330f, 0f, 30f, 60f, 90f, 120f)
-        for (level in lightnessLevels) { for (h in hues) { grid.add(Color(android.graphics.Color.HSVToColor(floatArrayOf(h, level.first, level.second)))) } }
-        grid
-    }
+
+    val palette = listOf(
+        listOf(Color(0xFF2D3436), Color(0xFF636E72), Color(0xFFB2BEC3), Color(0xFFDFE6E9)),
+        listOf(Color(0xFFD63031), Color(0xFFE17055), Color(0xFFFDCB6E), Color(0xFFFFEAA7)),
+        listOf(Color(0xFF0984E3), Color(0xFF00CEC9), Color(0xFF6C5CE7), Color(0xFFA29BFE)),
+        listOf(Color(0xFF00B894), Color(0xFF55EFC4), Color(0xFFE84393), Color(0xFFFAB1A0))
+    )
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = { onSave(selectedColor, width) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-        title = { Text(title) },
+        confirmButton = { TextButton(onClick = { onSave(selectedColor, width) }) { Text("Done") } },
+        title = { Text(title, fontWeight = FontWeight.Bold) },
         text = {
-            Column(horizontalAlignment = Alignment.Start) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text("Thickness", fontSize = 14.sp); Spacer(Modifier.weight(1f))
-                    IconButton(onClick = { if (width > 1f) width -= 1f }) { Text("-", fontSize = 24.sp) }
-                    Text("${String.format("%.1f", width)}px", fontSize = 14.sp)
-                    IconButton(onClick = { if (width < 60f) width += 1f }) { Text("+", fontSize = 24.sp) }
-                }
-                Slider(value = width, onValueChange = { width = it }, valueRange = 1f..60f)
-                Spacer(Modifier.height(24.dp))
-                LazyVerticalGrid(columns = GridCells.Fixed(11), modifier = Modifier.fillMaxWidth().height(220.dp).border(1.dp, Color.LightGray)) {
-                    items(colorPalette) { color ->
-                        Box(modifier = Modifier.aspectRatio(1f).background(color).border(
-                            width = if (selectedColor == color) 2.dp else 0.dp,
-                            color = if (selectedColor == color) Color.Black else Color.Transparent
-                        ).clickable { selectedColor = color })
+            Column {
+                Text("Thickness: ${width.toInt()}px", fontSize = 14.sp)
+                Slider(value = width, onValueChange = { width = it }, valueRange = 2f..80f)
+                Spacer(Modifier.height(16.dp))
+                palette.forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp)) {
+                        row.forEach { color ->
+                            Box(modifier = Modifier.size(44.dp).background(color, CircleShape).border(if (selectedColor == color) 3.dp else 0.dp, Color.Black, CircleShape).clickable { selectedColor = color })
+                        }
                     }
                 }
             }
@@ -300,20 +215,56 @@ fun ColorPickerAndWidthDialog(title: String, initialColor: Color, initialWidth: 
 }
 
 @Composable
+fun ToolButton(icon: ImageVector, isActive: Boolean, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.background(if (isActive) Color.White else Color.Transparent, CircleShape).border(if (isActive) 1.dp else 0.dp, Color.LightGray, CircleShape)) {
+        Icon(icon, null, tint = if (isActive) Color.Black else Color.Gray)
+    }
+}
+
+@Composable
 fun TemplateSelectionDialog(onDismiss: () -> Unit, onSelect: (PageBackground) -> Unit) {
     AlertDialog(
-        onDismissRequest = onDismiss, confirmButton = {}, title = { Text("Select Template") },
-        text = {
-            Column {
-                // תיקון קריטי: שימוש ב-values() במקום entries למניעת שגיאת הידור בגרסאות ישנות
-                PageBackground.values().forEach { type ->
-                    TextButton(onClick = { onSelect(type) }, modifier = Modifier.fillMaxWidth()) {
-                        Text(type.name)
-                    }
-                }
+        onDismissRequest = onDismiss, confirmButton = {}, title = { Text("Page Template") },
+        text = { Column { PageBackground.values().forEach { type -> TextButton(onClick = { onSelect(type) }, modifier = Modifier.fillMaxWidth()) { Text(type.name) } } } }
+    )
+}
+
+@Composable
+fun ResizableDraggableImage(img: CanvasImage, isActive: Boolean, onUpdate: (Float, Float, Float, Float) -> Unit) {
+    val context = LocalContext.current
+    var bitmap by remember(img.id) { mutableStateOf<ImageBitmap?>(null) }
+    var x by remember { mutableStateOf(img.x) }; var y by remember { mutableStateOf(img.y) }
+    var w by remember { mutableStateOf(img.width) }; var h by remember { mutableStateOf(img.height) }
+
+    LaunchedEffect(img.x, img.y, img.width, img.height) { x = img.x; y = img.y; w = img.width; h = img.height }
+    LaunchedEffect(img.uri) {
+        withContext(Dispatchers.IO) {
+            try {
+                val uri = android.net.Uri.parse(img.uri)
+                val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, options) }
+                options.inSampleSize = calculateInSampleSize(options, 1000, 1000)
+                options.inJustDecodeBounds = false
+                context.contentResolver.openInputStream(uri)?.use { val b = android.graphics.BitmapFactory.decodeStream(it, null, options); bitmap = b?.asImageBitmap() }
+            } catch (_: Exception) {}
+        }
+    }
+
+    Box(modifier = Modifier.offset { IntOffset(x.toInt(), y.toInt()) }) {
+        Box(modifier = Modifier.size(with(LocalDensity.current) { w.toDp() }, with(LocalDensity.current) { h.toDp() }).pointerInput(isActive) {
+            if (isActive) detectDragGestures(onDragEnd = { onUpdate(x, y, w, h) }) { change, dragAmount -> change.consume(); x += dragAmount.x; y += dragAmount.y }
+        }) {
+            bitmap?.let { Image(bitmap = it, contentDescription = null, contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize()) }
+            if (isActive) Box(modifier = Modifier.fillMaxSize().border(2.dp, Color(0xFF3b82f6)))
+        }
+        if (isActive) {
+            Box(modifier = Modifier.align(Alignment.BottomEnd).offset(15.dp, 15.dp).size(48.dp).pointerInput(Unit) {
+                detectDragGestures(onDragEnd = { onUpdate(x, y, w, h) }) { change, dragAmount -> change.consume(); w = (w + dragAmount.x).coerceAtLeast(100f); h = (h + dragAmount.y).coerceAtLeast(100f) }
+            }) {
+                Box(modifier = Modifier.size(24.dp).align(Alignment.Center).background(Color(0xFF3b82f6), CircleShape).border(2.dp, Color.White, CircleShape))
             }
         }
-    )
+    }
 }
 
 fun calculateInSampleSize(options: android.graphics.BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
@@ -323,4 +274,20 @@ fun calculateInSampleSize(options: android.graphics.BitmapFactory.Options, reqWi
         while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) { inSampleSize *= 2 }
     }
     return inSampleSize
+}
+
+@Composable
+fun BackgroundCanvas(backgroundType: PageBackground, modifier: Modifier = Modifier.fillMaxSize()) {
+    androidx.compose.foundation.Canvas(modifier = modifier) {
+        val lineColor = Color.LightGray.copy(alpha = 0.4f); val spacing = 40.dp.toPx()
+        when (backgroundType) {
+            PageBackground.LINES -> { var curY = spacing; while (curY < size.height) { drawLine(lineColor, Offset(0f, curY), Offset(size.width, curY), 1.dp.toPx()); curY += spacing } }
+            PageBackground.GRID -> {
+                var curY = spacing; while (curY < size.height) { drawLine(lineColor, Offset(0f, curY), Offset(size.width, curY), 1.dp.toPx()); curY += spacing }
+                var curX = spacing; while (curX < size.width) { drawLine(lineColor, Offset(curX, 0f), Offset(curX, size.height), 1.dp.toPx()); curX += spacing }
+            }
+            PageBackground.DOTS -> { for (x in (spacing.toInt()..size.width.toInt() step spacing.toInt())) for (y in (spacing.toInt()..size.height.toInt() step spacing.toInt())) drawCircle(lineColor, 2f, Offset(x.toFloat(), y.toFloat())) }
+            else -> {}
+        }
+    }
 }
