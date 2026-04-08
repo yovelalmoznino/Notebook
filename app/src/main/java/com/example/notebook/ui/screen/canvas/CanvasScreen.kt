@@ -135,13 +135,10 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
 
                         BackgroundCanvas(backgroundType = pageModel.background)
 
+                        // תמונות: אותה לוגיקה, לא שינינו כלום
                         val displayImages = if (uiState.selectionPageId == pageModel.page.id) {
                             pageModel.images.filterNot { img -> uiState.selectedImages.any { it.id == img.id } } + uiState.selectedImages
                         } else pageModel.images
-
-                        val displayStrokes = if (uiState.selectionPageId == pageModel.page.id) {
-                            pageModel.strokes.filterNot { s -> uiState.selectedStrokes.any { it.id == s.id } } + uiState.selectedStrokes
-                        } else pageModel.strokes
 
                         displayImages.forEach { img ->
                             ResizableDraggableImage(
@@ -151,21 +148,26 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
                             )
                         }
 
-                        // התיקון של הלאסו נמצא כאן: הוא נשאר מצויר גם כשההרמנו את העט, כל עוד יש משהו מסומן!
-                        // ✅ אחרי:
-// הסטרוקים הרגילים - ללא הנבחרים (הם יצוירו בנפרד עם offset)
+                        // *** תיקון Ghosting ***
+                        // baseStrokes = כל הסטרוקים של הדף, פחות אלה שנבחרו (hiddenStrokeIds)
+                        // כך הם לא מצוירים פעמיים — פעם אחת דרך pageModel ופעם שנייה דרך selectedStrokes
                         val baseStrokes = if (uiState.selectionPageId == pageModel.page.id) {
-                            pageModel.strokes.filterNot { s -> uiState.selectedStrokes.any { it.id == s.id } }
-                        } else pageModel.strokes
+                            pageModel.strokes.filterNot { s -> s.id in uiState.hiddenStrokeIds }
+                        } else {
+                            pageModel.strokes
+                        }
 
-// חישוב ה-dragOffset מתוך selectedStrokes לעומת הנקודות המקוריות
-// (ה-ViewModel כבר מעדכן את selectedStrokes עם הקואורדינטות החדשות)
-// אז ה-offset הוא ההפרש בין המיקום הנוכחי למקורי — פשוט Offset.Zero כי ה-VM שומר קואורדינטות מוחלטות
+                        val activeSelectedStrokes = if (uiState.selectionPageId == pageModel.page.id) {
+                            uiState.selectedStrokes
+                        } else {
+                            emptyList()
+                        }
+
                         DrawingCanvas(
                             activeTool = uiState.activeTool,
                             strokes = baseStrokes,
-                            selectedStrokes = if (uiState.selectionPageId == pageModel.page.id) uiState.selectedStrokes else emptyList(),
-                            dragOffset = Offset.Zero, // הקואורדינטות המוחלטות כבר ב-selectedStrokes
+                            selectedStrokes = activeSelectedStrokes,
+                            dragOffset = Offset.Zero,
                             currentStroke = if (uiState.drawingPageId == pageModel.page.id) uiState.currentStroke else null,
                             lassoPath = if (uiState.drawingPageId == pageModel.page.id || uiState.selectionPageId == pageModel.page.id) uiState.lassoPath else emptyList(),
                             onAction = { event -> viewModel.handleMotionEvent(pageModel.page.id, event) }
@@ -248,15 +250,19 @@ fun ColorPickerAndWidthDialog(title: String, initialColor: Color, initialWidth: 
     var selectedColor by remember { mutableStateOf(initialColor) }
     var width by remember { mutableStateOf(initialWidth) }
     val colorPalette = remember {
-        val grid = mutableListOf<Color>(); val grays = listOf(0xFFFFFFFF, 0xFFE0E0E0, 0xFFCCCCCC, 0xFFB3B3B3, 0xFF999999, 0xFF808080, 0xFF666666, 0xFF4D4D4D, 0xFF333333, 0xFF1A1A1A, 0xFF000000)
+        val grid = mutableListOf<Color>()
+        val grays = listOf(0xFFFFFFFF, 0xFFE0E0E0, 0xFFCCCCCC, 0xFFB3B3B3, 0xFF999999, 0xFF808080, 0xFF666666, 0xFF4D4D4D, 0xFF333333, 0xFF1A1A1A, 0xFF000000)
         grid.addAll(grays.map { Color(it) })
         val lightnessLevels = listOf(Pair(0.15f, 1.0f), Pair(0.35f, 1.0f), Pair(0.55f, 1.0f), Pair(1.0f, 1.0f), Pair(1.0f, 0.75f), Pair(1.0f, 0.5f))
         val hues = listOf(180f, 200f, 220f, 260f, 300f, 330f, 0f, 30f, 60f, 90f, 120f)
-        for (level in lightnessLevels) { for (h in hues) { grid.add(Color(android.graphics.Color.HSVToColor(floatArrayOf(h, level.first, level.second)))) } }; grid
+        for (level in lightnessLevels) { for (h in hues) { grid.add(Color(android.graphics.Color.HSVToColor(floatArrayOf(h, level.first, level.second)))) } }
+        grid
     }
     AlertDialog(
-        onDismissRequest = onDismiss, confirmButton = { TextButton(onClick = { onSave(selectedColor, width) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }, title = { Text(title) },
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = { onSave(selectedColor, width) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        title = { Text(title) },
         text = {
             Column(horizontalAlignment = Alignment.Start) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -268,7 +274,12 @@ fun ColorPickerAndWidthDialog(title: String, initialColor: Color, initialWidth: 
                 Slider(value = width, onValueChange = { width = it }, valueRange = 1f..60f)
                 Spacer(Modifier.height(24.dp))
                 LazyVerticalGrid(columns = GridCells.Fixed(11), modifier = Modifier.fillMaxWidth().height(220.dp).border(1.dp, Color.LightGray)) {
-                    items(colorPalette) { color -> Box(modifier = Modifier.aspectRatio(1f).background(color).border(width = if (selectedColor == color) 2.dp else 0.dp, color = if (selectedColor == color) Color.Black else Color.Transparent).clickable { selectedColor = color }) }
+                    items(colorPalette) { color ->
+                        Box(modifier = Modifier.aspectRatio(1f).background(color).border(
+                            width = if (selectedColor == color) 2.dp else 0.dp,
+                            color = if (selectedColor == color) Color.Black else Color.Transparent
+                        ).clickable { selectedColor = color })
+                    }
                 }
             }
         }
