@@ -12,9 +12,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.input.pointer.pointerInteropFilter
-import com.example.notebook.data.model.Stroke // אימפורט חובה!
-
-// בתוך DrawingCanvas.kt
+import com.example.notebook.data.model.Stroke
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -27,24 +25,30 @@ fun DrawingCanvas(
     Canvas(
         modifier = modifier
             .fillMaxSize()
-            .pointerInteropFilter {
-                onAction(it)
-                true
+            .pointerInteropFilter { event ->
+                val toolType = event.getToolType(0)
+                // אם זה עט או מחק - הקנבס לוקח את האירוע ומצייר (לא גולל)
+                if (toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER) {
+                    onAction(event)
+                    true
+                } else {
+                    // אם זו אצבע - אנחנו מחזירים false, והמסך יגלול!
+                    false
+                }
             }
     ) {
-        // רנדור קווים קיימים (הם נעלמים מהרשימה כשהמחק פוגע בהם)
+        // ציור הקווים השמורים
         strokes.forEach { stroke ->
             drawStrokePath(stroke)
         }
 
-        // רנדור הקו הנוכחי (רק אם אנחנו בעט)
+        // ציור הקו שאנחנו מציירים ברגע זה
         currentStroke?.let { stroke ->
             drawStrokePath(stroke)
         }
     }
 }
 
-// פונקציית עזר לציור Path מתוך אובייקט Stroke
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawStrokePath(stroke: Stroke) {
     if (stroke.points.isEmpty()) return
 
