@@ -21,6 +21,7 @@ fun CanvasScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+
                 title = { Text(uiState.notebookTitle, color = PastelOnBackground) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
