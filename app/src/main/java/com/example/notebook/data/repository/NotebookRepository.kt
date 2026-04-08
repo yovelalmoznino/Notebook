@@ -19,4 +19,11 @@ class NotebookRepository @Inject constructor(
 
     // תיקון: מחיקה לפי ID
     suspend fun deleteNotebook(notebook: NotebookEntity) = notebookDao.deleteNotebookById(notebook.id)
+    suspend fun createNotebook(folderId: Long, title: String) {
+        val newNotebook = NotebookEntity(
+            folderId = folderId,
+            title = title
+        )
+        insertNotebook(newNotebook)
+    }
 }

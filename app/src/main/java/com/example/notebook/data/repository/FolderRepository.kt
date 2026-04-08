@@ -29,4 +29,5 @@ class FolderRepository @Inject constructor(
     suspend fun deleteFolder(id: Long) = folderDao.deleteFolderById(id)
 
     private fun FolderEntity.toDomain() = Folder(id, name, parentId, colorHex, updatedAt)
+
 }

@@ -31,15 +31,42 @@ class DashboardViewModel @Inject constructor(
 
     fun loadFolder(folderId: Long?) {
         viewModelScope.launch {
+            // 1. הגדרת זרימת התיקיות
             val folderFlow = if (folderId == null) folderRepo.observeRootFolders()
             else folderRepo.observeChildFolders(folderId)
 
-            val notebookFlow = if (folderId != null) notebookRepo.observeNotebooksInFolder(folderId)
-            else flowOf(emptyList())
+            // 2. הגדרת זרימת המחברות עם מיפוי מ-Entity למודל Domain
+            val notebookFlow = if (folderId != null) {
+                notebookRepo.getNotebooksByFolder(folderId).map { entities ->
+                    entities.map { entity ->
+                        Notebook(
+                            id = entity.id,
+                            folderId = entity.folderId,
+                            title = entity.title,
+                            coverColorStart = entity.coverColorStart,
+                            coverColorEnd = entity.coverColorEnd,
+                            updatedAt = entity.updatedAt,
+                            strokeDataJson = entity.strokeDataJson
+                        )
+                    }
+                }
+            } else {
+                flowOf(emptyList())
+            }
 
+            // 3. שילוב הזרמים ועדכון ה-UI
             combine(folderFlow, notebookFlow) { f, n ->
-                _uiState.value.copy(folders = f, notebooks = n, isLoading = false, currentFolderId = folderId)
-            }.collect { _uiState.value = it }
+                _uiState.value.copy(
+                    folders = f.map { entity ->
+                        Folder(entity.id, entity.name, entity.parentId, entity.colorHex, entity.updatedAt)
+                    },
+                    notebooks = n,
+                    isLoading = false,
+                    currentFolderId = folderId
+                )
+            }.collect { newState ->
+                _uiState.value = newState
+            }
         }
     }
 
