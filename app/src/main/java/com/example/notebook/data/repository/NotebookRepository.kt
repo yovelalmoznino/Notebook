@@ -12,20 +12,14 @@ import javax.inject.Singleton
 class NotebookRepository @Inject constructor(
     private val notebookDao: NotebookDao
 ) {
-    fun observeNotebooksInFolder(folderId: Long): Flow<List<Notebook>> =
-        notebookDao.observeNotebooksInFolder(folderId).map { it.map { entity -> entity.toDomain() } }
+    fun getNotebooksByFolder(folderId: Long) = notebookDao.getNotebooksByFolder(folderId)
 
-    suspend fun getNotebookById(id: Long): Notebook? = notebookDao.getNotebookById(id)?.toDomain()
+    suspend fun insertNotebook(notebook: NotebookEntity) = notebookDao.insertNotebook(notebook)
 
-    suspend fun createNotebook(folderId: Long, title: String): Long =
-        notebookDao.insertNotebook(NotebookEntity(folderId = folderId, title = title))
+    suspend fun deleteNotebook(notebook: NotebookEntity) = notebookDao.deleteNotebook(notebook)
 
-    suspend fun saveStrokes(notebookId: Long, strokeJson: String) =
-        notebookDao.saveStrokes(notebookId, strokeJson)
+    // הוסף את אלו:
+    suspend fun getNotebookById(id: Long): NotebookEntity? = notebookDao.getNotebookById(id)
 
-    suspend fun deleteNotebook(id: Long) = notebookDao.deleteNotebookById(id)
-
-    private fun NotebookEntity.toDomain() = Notebook(
-        id, folderId, title, coverColorStart, coverColorEnd, updatedAt, strokeDataJson
-    )
+    suspend fun updateNotebook(notebook: NotebookEntity) = notebookDao.updateNotebook(notebook)
 }

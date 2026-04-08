@@ -9,11 +9,14 @@ import com.example.notebook.data.db.dao.NotebookDao
 import com.example.notebook.data.db.entity.FolderEntity
 import com.example.notebook.data.db.entity.NotebookEntity
 
+import androidx.room.TypeConverters
+
 @Database(
     entities = [FolderEntity::class, NotebookEntity::class],
     version = 1,
     exportSchema = true
 )
+@TypeConverters(Converters::class) //
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun folderDao(): FolderDao

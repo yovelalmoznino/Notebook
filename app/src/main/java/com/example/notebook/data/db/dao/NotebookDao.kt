@@ -20,4 +20,9 @@ interface NotebookDao {
 
     @Query("DELETE FROM notebooks WHERE id = :id")
     suspend fun deleteNotebookById(id: Long)
+    @Query("SELECT * FROM notebooks WHERE id = :notebookId")
+    suspend fun getNotebookById(notebookId: Long): NotebookEntity?
+
+    @Update
+    suspend fun updateNotebook(notebook: NotebookEntity)
 }
