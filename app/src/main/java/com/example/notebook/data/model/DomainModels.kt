@@ -1,9 +1,18 @@
 package com.example.notebook.data.model
 
-// סוגי הרקעים של הדף
-enum class PageBackground {
-    PLAIN, LINES, GRID, DOTS
-}
+import java.util.UUID
+
+enum class PageBackground { PLAIN, LINES, GRID, DOTS }
+enum class ShapeType { FREEHAND, LINE, RECTANGLE, CIRCLE }
+
+data class CanvasImage(
+    val id: String,
+    val uri: String,
+    val x: Float,
+    val y: Float,
+    val width: Float = 300f,
+    val height: Float = 300f
+)
 
 data class Folder(
     val id: Long,
@@ -30,9 +39,11 @@ data class StrokePoint(
 )
 
 data class Stroke(
+    val id: String = UUID.randomUUID().toString(),
     val points: List<StrokePoint>,
     val color: Int,
     val strokeWidth: Float,
     val isEraser: Boolean = false,
-    val isHighlighter: Boolean = false
+    val isHighlighter: Boolean = false,
+    val shapeType: ShapeType? = ShapeType.FREEHAND
 )
