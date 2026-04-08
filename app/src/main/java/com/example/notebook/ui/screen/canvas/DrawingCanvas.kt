@@ -29,36 +29,71 @@ import kotlin.math.hypot
 @Composable
 fun DrawingCanvas(
     activeTool: CanvasTool,
-    strokes: List<Stroke>,            // הסטרוקים הרגילים (ללא הנבחרים)
-    selectedStrokes: List<Stroke>,    // הסטרוקים הנבחרים - מצוירים בנפרד
-    dragOffset: Offset,               // ה-offset הנוכחי של הגרירה
+    strokes: List<Stroke>,
+    selectedStrokes: List<Stroke>,
+    dragOffset: Offset,
     currentStroke: Stroke?,
     lassoPath: List<Offset>,
     onAction: (MotionEvent) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // requestDisallowInterceptTouchEvent מונע מה-ScrollView לגנוב את האירועים
+    // אבל צריך לקרוא לו רק כשהעט/אצבע על המסך, ולא לפני
     val requestDisallowInterceptTouchEvent = remember { RequestDisallowInterceptTouchEvent() }
 
     Canvas(
         modifier = modifier
             .fillMaxSize()
-            .pointerInteropFilter(requestDisallowInterceptTouchEvent = requestDisallowInterceptTouchEvent) { event ->
+            .pointerInteropFilter(
+                requestDisallowInterceptTouchEvent = requestDisallowInterceptTouchEvent
+            ) { event ->
                 if (activeTool == CanvasTool.IMAGE) return@pointerInteropFilter false
+
+                // *** תיקון קריטי לכפתור Lenovo ***
+                // חייבים לקרוא את buttonState ו-toolType כאן, לפני כל דבר אחר.
+                // MotionEvent.obtain() יוצר עותק כדי למנוע recycling.
+                // ה-Compose framework יכול ל-recycle את ה-event המקורי לאחר return,
+                // ולכן אנחנו עובדים עם עותק שלו.
+                val toolType = event.getToolType(0)
+                val buttonState = event.buttonState
+
+                // בודק כפתור סטייל לפני שמחליטים מה לעשות עם האירוע
+                val isStylusActive = toolType == MotionEvent.TOOL_TYPE_STYLUS ||
+                        toolType == MotionEvent.TOOL_TYPE_ERASER
+
+                // *** CRUCIAL: requestDisallowIntercept רק כש-isStylusActive ***
+                // כשקוראים לזה ב-ACTION_DOWN, Android מפסיק לעדכן חלק
+                // מהמטא-דאטה (כולל buttonState) באירועים עוקבים!
+                // לכן קוראים לו רק אם אנחנו בטוחים שזה לא יגרום לבעיה.
                 when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN ->
-                        requestDisallowInterceptTouchEvent.invoke(true)
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_UP ->
+                    MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                        // מאפשרים intercept רק אצבע, לא עט
+                        // עט מטפל בעצמו וצריך את כל המטא-דאטה
+                        if (!isStylusActive) {
+                            requestDisallowInterceptTouchEvent.invoke(true)
+                        }
+                    }
+                    MotionEvent.ACTION_UP,
+                    MotionEvent.ACTION_CANCEL,
+                    MotionEvent.ACTION_POINTER_UP -> {
                         requestDisallowInterceptTouchEvent.invoke(false)
+                    }
                 }
-                onAction(event)
+
+                // יוצרים עותק מלא של ה-event עם ה-buttonState הנכון
+                // MotionEvent.obtain מעתיק את כל הנתונים לפני שהם עלולים להישכח
+                val eventCopy = MotionEvent.obtain(event)
+                onAction(eventCopy)
+                // חשוב: לא קוראים ל-eventCopy.recycle() כי ה-ViewModel צריך אותו
+                // ה-GC יטפל בו
+
                 true
             }
     ) {
         // שכבה 1: כל הסטרוקים הרגילים (לא כוללים את הנבחרים!)
         strokes.forEach { drawStrokePath(it, Offset.Zero) }
 
-        // שכבה 2: הסטרוקים הנבחרים - מצוירים רק בעמדתם החדשה (עם dragOffset)
-        // זה מונע את ה"Ghosting" כי הם לא נמצאים ב-strokes הרגילים
+        // שכבה 2: הסטרוקים הנבחרים בעמדתם הנוכחית (כבר עם offset מחושב ב-ViewModel)
         if (selectedStrokes.isNotEmpty()) {
             selectedStrokes.forEach { drawStrokePath(it, dragOffset) }
         }
@@ -123,7 +158,11 @@ private fun DrawScope.drawStrokePath(stroke: Stroke, offset: Offset) {
             if (stroke.points.size >= 2) {
                 val p1 = stroke.points.first(); val p2 = stroke.points.last()
                 val radius = hypot(p2.x - p1.x, p2.y - p1.y)
-                drawCircle(color, radius, Offset(p1.x + offset.x, p1.y + offset.y), style = style, blendMode = blendMode)
+                drawCircle(
+                    color, radius,
+                    Offset(p1.x + offset.x, p1.y + offset.y),
+                    style = style, blendMode = blendMode
+                )
             }
         }
     }
