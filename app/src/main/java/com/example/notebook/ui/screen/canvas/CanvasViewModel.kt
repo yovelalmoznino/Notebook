@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.notebook.data.db.entity.NotebookEntity
 import com.example.notebook.data.db.entity.PageEntity
+import com.example.notebook.data.model.PageBackground
 import com.example.notebook.data.model.Stroke
 import com.example.notebook.data.model.StrokePoint
 import com.example.notebook.data.repository.NotebookRepository
@@ -21,28 +22,25 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import kotlin.math.hypot
 
-// מודל עזר שמחבר בין הנתונים של הדף לציורים שעליו
 data class PageUiModel(
     val page: PageEntity,
-    val strokes: List<Stroke>
+    val strokes: List<Stroke>,
+    val background: PageBackground
 )
 
 data class CanvasUiState(
     val notebookTitle: String = "",
-    val pages: List<PageUiModel> = emptyList(), // עכשיו זו רשימה של דפים!
+    val pages: List<PageUiModel> = emptyList(),
     val activeTool: CanvasTool = CanvasTool.PEN,
-    val selectedColor: Int = 0xFF000000.toInt(),
-    val strokeWidth: Float = 5f,
+    val penColor: Int = 0xFF000000.toInt(),
+    val penWidth: Float = 4f,
+    val highlighterColor: Int = 0xFFFFFF00.toInt(),
+    val highlighterWidth: Float = 30f,
     val currentStroke: Stroke? = null,
-    val drawingPageId: Long? = null // מזהה את הדף שעליו אנחנו מציירים כרגע
+    val drawingPageId: Long? = null
 )
 
-enum class CanvasTool { PEN, ERASER }
-
-val PenColors = listOf(
-    0xFF000000.toInt(), 0xFFFF0000.toInt(), 0xFF0000FF.toInt(),
-    0xFF008000.toInt(), 0xFFFFA500.toInt(), 0xFF800080.toInt()
-)
+enum class CanvasTool { PEN, HIGHLIGHTER, ERASER }
 
 @HiltViewModel
 class CanvasViewModel @Inject constructor(
@@ -53,154 +51,118 @@ class CanvasViewModel @Inject constructor(
     private val notebookId: Long = savedStateHandle.get<Long>("notebookId") ?: 0L
     private val _uiState = MutableStateFlow(CanvasUiState())
     val uiState: StateFlow<CanvasUiState> = _uiState.asStateFlow()
-
-    private var currentNotebook: NotebookEntity? = null
     private val gson = Gson()
 
-    init {
-        loadNotebookData()
-    }
+    init { loadNotebookData() }
 
     private fun loadNotebookData() {
         viewModelScope.launch {
-            currentNotebook = repository.getNotebookById(notebookId)
             repository.ensureFirstPageExists(notebookId)
+            val notebook = repository.getNotebookById(notebookId)
+            _uiState.update { it.copy(notebookTitle = notebook?.title ?: "") }
             refreshPages()
-
-            _uiState.update { it.copy(notebookTitle = currentNotebook?.title ?: "") }
         }
     }
 
     private suspend fun refreshPages() {
         val pages = repository.getPages(notebookId)
         val listType = object : TypeToken<List<Stroke>>() {}.type
-
         val pageModels = pages.map { page ->
             val strokes: List<Stroke> = try {
                 gson.fromJson(page.strokeDataJson, listType) ?: emptyList()
-            } catch (_: Exception) {
-                emptyList()
-            }
-            PageUiModel(page, strokes)
+            } catch (_: Exception) { emptyList() }
+            PageUiModel(page, strokes, PageBackground.valueOf(page.backgroundType))
         }
-
         _uiState.update { it.copy(pages = pageModels) }
     }
 
-    // הוספת דף חדש לסוף המחברת
+    fun updatePageBackground(pageId: Long, background: PageBackground) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val pages = repository.getPages(notebookId)
+            pages.find { it.id == pageId }?.let { page ->
+                repository.updatePage(page.copy(backgroundType = background.name))
+                refreshPages()
+            }
+        }
+    }
+
     fun addNewPage() {
         viewModelScope.launch {
             val pages = repository.getPages(notebookId)
-            val newPageNumber = (pages.maxOfOrNull { it.pageNumber } ?: 0) + 1
-            repository.insertPage(PageEntity(notebookId = notebookId, pageNumber = newPageNumber))
+            val newNum = (pages.maxOfOrNull { it.pageNumber } ?: 0) + 1
+            repository.insertPage(PageEntity(notebookId = notebookId, pageNumber = newNum))
             refreshPages()
         }
     }
 
     fun handleMotionEvent(pageId: Long, event: MotionEvent) {
-        val x = event.x
-        val y = event.y
-        val pressure = event.pressure
-
+        val x = event.x; val y = event.y; val pressure = event.pressure
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 _uiState.update { it.copy(drawingPageId = pageId) }
-                if (_uiState.value.activeTool == CanvasTool.ERASER) {
-                    eraseStrokesAt(pageId, x, y)
-                } else {
-                    startNewStroke(x, y, pressure)
-                }
+                if (_uiState.value.activeTool == CanvasTool.ERASER) eraseStrokesAt(pageId, x, y)
+                else startNewStroke(x, y, pressure)
             }
             MotionEvent.ACTION_MOVE -> {
-                // מוודאים שאנחנו ממשיכים את הציור רק על הדף שהתחלנו בו
                 if (_uiState.value.drawingPageId == pageId) {
-                    if (_uiState.value.activeTool == CanvasTool.ERASER) {
-                        eraseStrokesAt(pageId, x, y)
-                    } else {
-                        updateCurrentStroke(x, y, pressure)
-                    }
+                    if (_uiState.value.activeTool == CanvasTool.ERASER) eraseStrokesAt(pageId, x, y)
+                    else updateCurrentStroke(x, y, pressure)
                 }
             }
             MotionEvent.ACTION_UP -> {
-                if (_uiState.value.drawingPageId == pageId) {
-                    if (_uiState.value.activeTool == CanvasTool.PEN) {
-                        finishStroke(pageId)
-                    } else {
-                        _uiState.update { it.copy(drawingPageId = null) }
-                    }
-                }
+                if (_uiState.value.drawingPageId == pageId && _uiState.value.activeTool != CanvasTool.ERASER) finishStroke(pageId)
+                else _uiState.update { it.copy(drawingPageId = null) }
             }
         }
     }
 
     private fun startNewStroke(x: Float, y: Float, pressure: Float) {
-        val newStroke = Stroke(
+        val s = _uiState.value
+        val isH = s.activeTool == CanvasTool.HIGHLIGHTER
+        _uiState.update { it.copy(currentStroke = Stroke(
             points = listOf(StrokePoint(x, y, pressure)),
-            color = _uiState.value.selectedColor,
-            strokeWidth = _uiState.value.strokeWidth,
-            isEraser = false
-        )
-        _uiState.update { it.copy(currentStroke = newStroke) }
+            color = if (isH) s.highlighterColor else s.penColor,
+            strokeWidth = if (isH) s.highlighterWidth else s.penWidth,
+            isHighlighter = isH
+        )) }
     }
 
     private fun updateCurrentStroke(x: Float, y: Float, pressure: Float) {
-        _uiState.value.currentStroke?.let { stroke ->
-            val updatedPoints = stroke.points + StrokePoint(x, y, pressure)
-            _uiState.update { it.copy(currentStroke = stroke.copy(points = updatedPoints)) }
+        _uiState.value.currentStroke?.let { s ->
+            _uiState.update { it.copy(currentStroke = s.copy(points = s.points + StrokePoint(x, y, pressure))) }
         }
     }
 
     private fun finishStroke(pageId: Long) {
-        _uiState.value.currentStroke?.let { stroke ->
-            val updatedPages = _uiState.value.pages.map { pageModel ->
-                if (pageModel.page.id == pageId) {
-                    val updatedStrokes = pageModel.strokes + stroke
-                    savePageData(pageModel.page, updatedStrokes)
-                    pageModel.copy(strokes = updatedStrokes)
-                } else {
-                    pageModel
-                }
-            }
-
-            _uiState.update {
-                it.copy(
-                    pages = updatedPages,
-                    currentStroke = null,
-                    drawingPageId = null
-                )
+        _uiState.value.currentStroke?.let { s ->
+            viewModelScope.launch(Dispatchers.IO) {
+                val pageModel = _uiState.value.pages.find { it.page.id == pageId } ?: return@launch
+                val updatedStrokes = pageModel.strokes + s
+                repository.updatePage(pageModel.page.copy(strokeDataJson = gson.toJson(updatedStrokes)))
+                refreshPages()
+                _uiState.update { it.copy(currentStroke = null, drawingPageId = null) }
             }
         }
     }
 
     private fun eraseStrokesAt(pageId: Long, x: Float, y: Float) {
-        val updatedPages = _uiState.value.pages.map { pageModel ->
-            if (pageModel.page.id == pageId) {
-                val remainingStrokes = pageModel.strokes.filterNot { stroke ->
-                    stroke.points.any { pt -> hypot((pt.x - x).toDouble(), (pt.y - y).toDouble()) < 25.0 }
-                }
-
-                if (remainingStrokes.size != pageModel.strokes.size) {
-                    savePageData(pageModel.page, remainingStrokes)
-                    pageModel.copy(strokes = remainingStrokes)
-                } else {
-                    pageModel
-                }
-            } else {
-                pageModel
-            }
-        }
-        _uiState.update { it.copy(pages = updatedPages) }
-    }
-
-    private fun savePageData(page: PageEntity, strokes: List<Stroke>) {
         viewModelScope.launch(Dispatchers.IO) {
-            val json = gson.toJson(strokes)
-            val updatedPage = page.copy(strokeDataJson = json, updatedAt = System.currentTimeMillis())
-            repository.updatePage(updatedPage)
+            val pageModel = _uiState.value.pages.find { it.page.id == pageId } ?: return@launch
+            val remaining = pageModel.strokes.filterNot { stroke ->
+                stroke.points.any { pt -> hypot((pt.x - x).toDouble(), (pt.y - y).toDouble()) < 25.0 }
+            }
+            if (remaining.size != pageModel.strokes.size) {
+                repository.updatePage(pageModel.page.copy(strokeDataJson = gson.toJson(remaining)))
+                refreshPages()
+            }
         }
     }
 
     fun setActiveTool(tool: CanvasTool) { _uiState.update { it.copy(activeTool = tool) } }
-    fun selectColor(color: Int) { _uiState.update { it.copy(selectedColor = color, activeTool = CanvasTool.PEN) } }
-    fun updateWidth(width: Float) { _uiState.update { it.copy(strokeWidth = width) } }
+    fun updateToolSettings(color: Int, width: Float) {
+        _uiState.update { s ->
+            if (s.activeTool == CanvasTool.HIGHLIGHTER) s.copy(highlighterColor = color, highlighterWidth = width)
+            else s.copy(penColor = color, penWidth = width)
+        }
+    }
 }

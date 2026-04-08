@@ -20,7 +20,9 @@ import androidx.room.PrimaryKey
 data class PageEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val notebookId: Long,
-    val pageNumber: Int, // דף 1, 2, 3...
+    val pageNumber: Int,
     val strokeDataJson: String = "[]",
+    val backgroundType: String = "PLAIN", // שומרים את שם ה-Enum כטקסט
+    val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )

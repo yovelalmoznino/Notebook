@@ -4,26 +4,26 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
+import com.example.notebook.data.db.Converters
 import com.example.notebook.data.db.dao.FolderDao
 import com.example.notebook.data.db.dao.NotebookDao
+import com.example.notebook.data.db.dao.PageDao
 import com.example.notebook.data.db.entity.FolderEntity
 import com.example.notebook.data.db.entity.NotebookEntity
-import androidx.room.TypeConverters // חשוב!
-import com.example.notebook.data.db.Converters
 import com.example.notebook.data.db.entity.PageEntity
-import com.example.notebook.data.db.dao.PageDao
 
 @Database(
-    entities = [FolderEntity::class, NotebookEntity::class, PageEntity::class], // הוספת PageEntity
-    version = 2, // עדכון גרסה ל-2 בגלל שינוי המבנה
+    entities = [FolderEntity::class, NotebookEntity::class, PageEntity::class],
+    version = 3, // שינינו ל-3 בגלל שהוספנו את backgroundType ל-PageEntity
     exportSchema = true
 )
-@TypeConverters(Converters::class) //
+@TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun folderDao(): FolderDao
     abstract fun notebookDao(): NotebookDao
-    abstract fun pageDao(): PageDao // הוספת ה-DAO
+    abstract fun pageDao(): PageDao
 
     companion object {
         @Volatile
@@ -36,7 +36,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pastelnote.db"
                 )
-                    .fallbackToDestructiveMigration()
+                    .fallbackToDestructiveMigration() // ימחק את הנתונים הישנים וייצור את הטבלאות מחדש עם העמודה החדשה
                     .build()
                     .also { INSTANCE = it }
             }
