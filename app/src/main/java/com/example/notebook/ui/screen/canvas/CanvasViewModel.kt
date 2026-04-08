@@ -19,13 +19,24 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+// הגדרת המצב של ה-UI - חייב להיות מחוץ למחלקה או מעליה
+data class CanvasUiState(
+    val strokes: List<Stroke> = emptyList(),
+    val currentStroke: Stroke? = null,
+    val activeTool: CanvasTool = CanvasTool.PEN
+)
+
+enum class CanvasTool {
+    PEN, ERASER
+}
+
 @HiltViewModel
 class CanvasViewModel @Inject constructor(
     private val repository: NotebookRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
-    // שליפת ה-ID של המחברת מהניווט. השם "notebookId" חייב להיות זהה למה שהגדרת ב-AppNavigation
+    // שליפת ה-ID של המחברת מהנתיב כפי שהוגדר ב-AppNavigation
     private val notebookId: Long = savedStateHandle.get<Long>("notebookId") ?: 0L
 
     private val _uiState = MutableStateFlow(CanvasUiState())
@@ -90,6 +101,7 @@ class CanvasViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             currentNotebook?.let { notebook ->
                 val json = gson.toJson(strokes)
+                // עדכון ה-Entity עם ה-JSON החדש וזמן העדכון
                 repository.updateNotebook(notebook.copy(strokeDataJson = json, updatedAt = System.currentTimeMillis()))
             }
         }
@@ -98,15 +110,4 @@ class CanvasViewModel @Inject constructor(
     fun setActiveTool(tool: CanvasTool) {
         _uiState.update { it.copy(activeTool = tool) }
     }
-}
-
-// הגדרות ה-UI State והכלים - שים לב שהן מחוץ למחלקה
-data class CanvasUiState(
-    val strokes: List<Stroke> = emptyList(),
-    val currentStroke: Stroke? = null,
-    val activeTool: CanvasTool = CanvasTool.PEN
-)
-
-enum class CanvasTool {
-    PEN, ERASER
 }

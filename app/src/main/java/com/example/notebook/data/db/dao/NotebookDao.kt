@@ -6,9 +6,8 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface NotebookDao {
-    // שינינו את השם כאן כדי שיתאים למה שה-Repository מחפש
     @Query("SELECT * FROM notebooks WHERE folderId = :folderId ORDER BY updatedAt DESC")
-    fun getNotebooksByFolder(folderId: Long): Flow<List<NotebookEntity>>
+    fun observeNotebooksInFolder(folderId: Long): Flow<List<NotebookEntity>>
 
     @Query("SELECT * FROM notebooks WHERE id = :id")
     suspend fun getNotebookById(id: Long): NotebookEntity?
