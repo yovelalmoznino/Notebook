@@ -1,12 +1,11 @@
 package com.example.notebook.di
 
 import android.content.Context
+import androidx.room.Room
 import com.example.notebook.data.db.AppDatabase
 import com.example.notebook.data.db.dao.FolderDao
 import com.example.notebook.data.db.dao.NotebookDao
 import com.example.notebook.data.db.dao.PageDao
-import com.example.notebook.data.repository.FolderRepository
-import com.example.notebook.data.repository.NotebookRepository
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -20,19 +19,22 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
-        AppDatabase.getInstance(context)
+    fun provideDatabase(@ApplicationContext context: Context): AppDatabase {
+        return Room.databaseBuilder(
+            context,
+            AppDatabase::class.java,
+            "pastel_notebook_db"
+        )
+            .fallbackToDestructiveMigration() // מאפשר לאפליקציה לעלות גם אם הסכימה השתנתה
+            .build()
+    }
 
     @Provides
-    @Singleton
     fun provideFolderDao(db: AppDatabase): FolderDao = db.folderDao()
 
     @Provides
-    @Singleton
     fun provideNotebookDao(db: AppDatabase): NotebookDao = db.notebookDao()
 
     @Provides
-    @Singleton
     fun providePageDao(db: AppDatabase): PageDao = db.pageDao()
-
 }

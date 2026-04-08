@@ -14,7 +14,7 @@ import com.example.notebook.data.db.entity.PageEntity
 
 @Database(
     entities = [FolderEntity::class, NotebookEntity::class, PageEntity::class],
-    version = 4, // גרסה 4 בגלל התמונות
+    version = 5, // גרסה 4 בגלל התמונות
     exportSchema = true
 )
 @TypeConverters(Converters::class)

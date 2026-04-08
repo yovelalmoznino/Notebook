@@ -1,6 +1,5 @@
 package com.example.notebook.ui.screen.canvas
 
-import android.content.Intent
 import android.view.MotionEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -48,8 +47,6 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
     val uiState by viewModel.uiState.collectAsState()
     var toolToConfigure by remember { mutableStateOf<CanvasTool?>(null) }
     var selectedPageForTemplate by remember { mutableStateOf<Long?>(null) }
-
-    val context = LocalContext.current
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { viewModel.addImage(it.toString()) }
     }
@@ -67,9 +64,9 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
                             icon = Icons.Rounded.Edit,
                             isActive = uiState.activeTool == CanvasTool.PEN,
                             onClick = { if (uiState.activeTool == CanvasTool.PEN) toolToConfigure = CanvasTool.PEN else viewModel.setActiveTool(CanvasTool.PEN) }
-                        ) {
+                        ) { closeMenu ->
                             PenType.values().forEach { type ->
-                                DropdownMenuItem(text = { Text(type.name) }, onClick = { viewModel.setPenType(type) })
+                                DropdownMenuItem(text = { Text(type.name) }, onClick = { viewModel.setPenType(type); closeMenu() })
                             }
                         }
 
@@ -77,9 +74,9 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
                             icon = Icons.Rounded.Brush,
                             isActive = uiState.activeTool == CanvasTool.HIGHLIGHTER,
                             onClick = { if (uiState.activeTool == CanvasTool.HIGHLIGHTER) toolToConfigure = CanvasTool.HIGHLIGHTER else viewModel.setActiveTool(CanvasTool.HIGHLIGHTER) }
-                        ) {
+                        ) { closeMenu ->
                             MarkerShape.values().forEach { shape ->
-                                DropdownMenuItem(text = { Text("${shape.name} Tip") }, onClick = { viewModel.setMarkerShape(shape) })
+                                DropdownMenuItem(text = { Text("${shape.name} Tip") }, onClick = { viewModel.setMarkerShape(shape); closeMenu() })
                             }
                         }
 
@@ -89,9 +86,9 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
                             icon = when(uiState.activeShape) { ShapeType.STAR -> Icons.Rounded.Star; ShapeType.TRIANGLE -> Icons.Rounded.ChangeHistory; else -> Icons.Rounded.Category },
                             isActive = uiState.activeTool == CanvasTool.SHAPE,
                             onClick = { if (uiState.activeTool == CanvasTool.SHAPE) toolToConfigure = CanvasTool.SHAPE else viewModel.setActiveTool(CanvasTool.SHAPE) }
-                        ) {
+                        ) { closeMenu ->
                             ShapeType.values().filter { it != ShapeType.FREEHAND }.forEach { type ->
-                                DropdownMenuItem(text = { Text(type.name) }, onClick = { viewModel.setShapeMode(type) })
+                                DropdownMenuItem(text = { Text(type.name) }, onClick = { viewModel.setShapeMode(type); closeMenu() })
                             }
                         }
 
@@ -119,7 +116,10 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
             )
         }
 
-        LazyColumn(modifier = Modifier.fillMaxSize().padding(padding).background(PastelBackground)) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding).background(PastelBackground),
+            userScrollEnabled = !uiState.isDrawing
+        ) {
             items(uiState.pages, key = { it.page.id }) { pageModel ->
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     IconButton(onClick = { selectedPageForTemplate = pageModel.page.id }) { Icon(Icons.Rounded.Settings, null) }
@@ -136,11 +136,23 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
 }
 
 @Composable
+fun ToolButtonWithMenu(icon: ImageVector, isActive: Boolean, onClick: () -> Unit, menuContent: @Composable (closeMenu: () -> Unit) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { onClick(); if (isActive) expanded = true }, modifier = Modifier.background(if (isActive) Color.White else Color.Transparent, CircleShape).border(if (isActive) 1.dp else 0.dp, Color.LightGray, CircleShape)) {
+            Icon(icon, null, tint = if (isActive) Color.Black else Color.Gray)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            menuContent { expanded = false }
+        }
+    }
+}
+
+// שאר פונקציות העזר (ColorPicker, ResizableDraggableImage וכו') נשארות ללא שינוי...
+@Composable
 fun PageContainer(page: PageUiModel, uiState: CanvasUiState, viewModel: CanvasViewModel) {
     Box(modifier = Modifier.padding(16.dp).fillMaxWidth().aspectRatio(0.7f).shadow(8.dp).background(Color.White).clipToBounds()) {
         BackgroundCanvas(page.background)
-
-        // הפרדת שכבות חכמה למניעת חסימת מגע
         val drawingLayer = @Composable {
             DrawingCanvas(
                 activeTool = uiState.activeTool,
@@ -152,7 +164,6 @@ fun PageContainer(page: PageUiModel, uiState: CanvasUiState, viewModel: CanvasVi
                 onAction = { event -> viewModel.handleMotionEvent(page.page.id, event) }
             )
         }
-
         val imagesLayer = @Composable {
             page.images.forEach { img ->
                 ResizableDraggableImage(img, uiState.activeTool == CanvasTool.IMAGE) { nx, ny, nw, nh ->
@@ -160,25 +171,7 @@ fun PageContainer(page: PageUiModel, uiState: CanvasUiState, viewModel: CanvasVi
                 }
             }
         }
-
-        if (uiState.activeTool == CanvasTool.IMAGE) {
-            drawingLayer()
-            imagesLayer()
-        } else {
-            imagesLayer()
-            drawingLayer()
-        }
-    }
-}
-
-@Composable
-fun ToolButtonWithMenu(icon: ImageVector, isActive: Boolean, onClick: () -> Unit, menuContent: @Composable ColumnScope.() -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        IconButton(onClick = { onClick(); if (isActive) expanded = true }, modifier = Modifier.background(if (isActive) Color.White else Color.Transparent, CircleShape).border(if (isActive) 1.dp else 0.dp, Color.LightGray, CircleShape)) {
-            Icon(icon, null, tint = if (isActive) Color.Black else Color.Gray)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, content = menuContent)
+        if (uiState.activeTool == CanvasTool.IMAGE) { drawingLayer(); imagesLayer() } else { imagesLayer(); drawingLayer() }
     }
 }
 
@@ -186,14 +179,12 @@ fun ToolButtonWithMenu(icon: ImageVector, isActive: Boolean, onClick: () -> Unit
 fun ColorPickerAndWidthDialog(title: String, initialColor: Color, initialWidth: Float, onDismiss: () -> Unit, onSave: (Color, Float) -> Unit) {
     var selectedColor by remember { mutableStateOf(initialColor) }
     var width by remember { mutableStateOf(initialWidth) }
-
     val palette = listOf(
         listOf(Color(0xFF2D3436), Color(0xFF636E72), Color(0xFFB2BEC3), Color(0xFFDFE6E9)),
         listOf(Color(0xFFD63031), Color(0xFFE17055), Color(0xFFFDCB6E), Color(0xFFFFEAA7)),
         listOf(Color(0xFF0984E3), Color(0xFF00CEC9), Color(0xFF6C5CE7), Color(0xFFA29BFE)),
         listOf(Color(0xFF00B894), Color(0xFF55EFC4), Color(0xFFE84393), Color(0xFFFAB1A0))
     )
-
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = { TextButton(onClick = { onSave(selectedColor, width) }) { Text("Done") } },
@@ -236,7 +227,6 @@ fun ResizableDraggableImage(img: CanvasImage, isActive: Boolean, onUpdate: (Floa
     var bitmap by remember(img.id) { mutableStateOf<ImageBitmap?>(null) }
     var x by remember { mutableStateOf(img.x) }; var y by remember { mutableStateOf(img.y) }
     var w by remember { mutableStateOf(img.width) }; var h by remember { mutableStateOf(img.height) }
-
     LaunchedEffect(img.x, img.y, img.width, img.height) { x = img.x; y = img.y; w = img.width; h = img.height }
     LaunchedEffect(img.uri) {
         withContext(Dispatchers.IO) {
@@ -244,13 +234,11 @@ fun ResizableDraggableImage(img: CanvasImage, isActive: Boolean, onUpdate: (Floa
                 val uri = android.net.Uri.parse(img.uri)
                 val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, options) }
-                options.inSampleSize = calculateInSampleSize(options, 1000, 1000)
-                options.inJustDecodeBounds = false
+                options.inSampleSize = calculateInSampleSize(options, 1000, 1000); options.inJustDecodeBounds = false
                 context.contentResolver.openInputStream(uri)?.use { val b = android.graphics.BitmapFactory.decodeStream(it, null, options); bitmap = b?.asImageBitmap() }
             } catch (_: Exception) {}
         }
     }
-
     Box(modifier = Modifier.offset { IntOffset(x.toInt(), y.toInt()) }) {
         Box(modifier = Modifier.size(with(LocalDensity.current) { w.toDp() }, with(LocalDensity.current) { h.toDp() }).pointerInput(isActive) {
             if (isActive) detectDragGestures(onDragEnd = { onUpdate(x, y, w, h) }) { change, dragAmount -> change.consume(); x += dragAmount.x; y += dragAmount.y }
@@ -261,9 +249,7 @@ fun ResizableDraggableImage(img: CanvasImage, isActive: Boolean, onUpdate: (Floa
         if (isActive) {
             Box(modifier = Modifier.align(Alignment.BottomEnd).offset(15.dp, 15.dp).size(48.dp).pointerInput(Unit) {
                 detectDragGestures(onDragEnd = { onUpdate(x, y, w, h) }) { change, dragAmount -> change.consume(); w = (w + dragAmount.x).coerceAtLeast(100f); h = (h + dragAmount.y).coerceAtLeast(100f) }
-            }) {
-                Box(modifier = Modifier.size(24.dp).align(Alignment.Center).background(Color(0xFF3b82f6), CircleShape).border(2.dp, Color.White, CircleShape))
-            }
+            }) { Box(modifier = Modifier.size(24.dp).align(Alignment.Center).background(Color(0xFF3b82f6), CircleShape).border(2.dp, Color.White, CircleShape)) }
         }
     }
 }
@@ -272,7 +258,7 @@ fun calculateInSampleSize(options: android.graphics.BitmapFactory.Options, reqWi
     val height = options.outHeight; val width = options.outWidth; var inSampleSize = 1
     if (height > reqHeight || width > reqWidth) {
         val halfHeight = height / 2; val halfWidth = width / 2
-        while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) { inSampleSize *= 2 }
+        while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) inSampleSize *= 2
     }
     return inSampleSize
 }
@@ -284,8 +270,8 @@ fun BackgroundCanvas(backgroundType: PageBackground, modifier: Modifier = Modifi
         when (backgroundType) {
             PageBackground.LINES -> { var curY = spacing; while (curY < size.height) { drawLine(lineColor, Offset(0f, curY), Offset(size.width, curY), 1.dp.toPx()); curY += spacing } }
             PageBackground.GRID -> {
-                var curY = spacing; while (curY < size.height) { drawLine(lineColor, Offset(0f, y), Offset(size.width, y), 1.dp.toPx()); curY += spacing }
-                var curX = spacing; while (curX < size.width) { drawLine(lineColor, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx()); curX += spacing }
+                var curY = spacing; while (curY < size.height) { drawLine(lineColor, Offset(0f, curY), Offset(size.width, curY), 1.dp.toPx()); curY += spacing }
+                var curX = spacing; while (curX < size.width) { drawLine(lineColor, Offset(curX, 0f), Offset(curX, size.height), 1.dp.toPx()); curX += spacing }
             }
             PageBackground.DOTS -> { for (x in (spacing.toInt()..size.width.toInt() step spacing.toInt())) for (y in (spacing.toInt()..size.height.toInt() step spacing.toInt())) drawCircle(lineColor, 2f, Offset(x.toFloat(), y.toFloat())) }
             else -> {}

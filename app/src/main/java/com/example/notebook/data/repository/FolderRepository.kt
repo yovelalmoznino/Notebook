@@ -28,6 +28,6 @@ class FolderRepository @Inject constructor(
 
     suspend fun deleteFolder(id: Long) = folderDao.deleteFolderById(id)
 
+    // פונקציית עזר להמרת ישות דאטהבייס למודל דומיין
     private fun FolderEntity.toDomain() = Folder(id, name, parentId, colorHex, updatedAt)
-
 }
