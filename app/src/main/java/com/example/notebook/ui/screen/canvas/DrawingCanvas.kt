@@ -14,6 +14,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import com.example.notebook.data.model.Stroke // אימפורט חובה!
 
+// בתוך DrawingCanvas.kt
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun DrawingCanvas(
@@ -30,12 +32,12 @@ fun DrawingCanvas(
                 true
             }
     ) {
-        // רנדור קווים קיימים
+        // רנדור קווים קיימים (הם נעלמים מהרשימה כשהמחק פוגע בהם)
         strokes.forEach { stroke ->
             drawStrokePath(stroke)
         }
 
-        // רנדור הקו הנוכחי שנכתב עכשיו
+        // רנדור הקו הנוכחי (רק אם אנחנו בעט)
         currentStroke?.let { stroke ->
             drawStrokePath(stroke)
         }

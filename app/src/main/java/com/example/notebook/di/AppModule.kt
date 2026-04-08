@@ -4,6 +4,7 @@ import android.content.Context
 import com.example.notebook.data.db.AppDatabase
 import com.example.notebook.data.db.dao.FolderDao
 import com.example.notebook.data.db.dao.NotebookDao
+import com.example.notebook.data.db.dao.PageDao
 import com.example.notebook.data.repository.FolderRepository
 import com.example.notebook.data.repository.NotebookRepository
 import dagger.Module
@@ -29,4 +30,8 @@ object AppModule {
     @Provides
     @Singleton
     fun provideNotebookDao(db: AppDatabase): NotebookDao = db.notebookDao()
+
+    @Provides
+    @Singleton
+    fun providePageDao(db: AppDatabase): PageDao = db.pageDao()
 }

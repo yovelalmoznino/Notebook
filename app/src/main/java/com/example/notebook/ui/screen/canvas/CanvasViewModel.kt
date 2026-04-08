@@ -24,12 +24,24 @@ data class CanvasUiState(
     val strokes: List<Stroke> = emptyList(),
     val currentStroke: Stroke? = null,
     val activeTool: CanvasTool = CanvasTool.PEN,
-    val notebookTitle: String = "טוען..." // הוספנו את זה
+    val selectedColor: Int = 0xFF000000.toInt(),
+    val strokeWidth: Float = 5f,
+    val notebookTitle: String = "",
+    val currentPageIndex: Int = 0,
+    val totalPages: Int = 1
 )
 
 enum class CanvasTool {
     PEN, ERASER
 }
+val PenColors = listOf(
+    0xFF000000.toInt(), // שחור
+    0xFFFF0000.toInt(), // אדום
+    0xFF0000FF.toInt(), // כחול
+    0xFF008000.toInt(), // ירוק
+    0xFFFFA500.toInt(), // כתום
+    0xFF800080.toInt()  // סגול
+)
 
 @HiltViewModel
 class CanvasViewModel @Inject constructor(
@@ -68,40 +80,94 @@ class CanvasViewModel @Inject constructor(
 
     }
 
+    // בתוך CanvasViewModel.kt
+
     fun handleMotionEvent(event: MotionEvent) {
+        // 1. Palm Rejection: התעלמות מכל מה שאינו עט (Stylus)
+        val toolType = event.getToolType(0)
+        if (toolType != MotionEvent.TOOL_TYPE_STYLUS && toolType != MotionEvent.TOOL_TYPE_ERASER) {
+            return
+        }
+
         val x = event.x
         val y = event.y
         val pressure = event.pressure
 
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
-                val newStroke = Stroke(
-                    points = listOf(StrokePoint(x, y, pressure)),
-                    color = if (_uiState.value.activeTool == CanvasTool.PEN) 0xFF000000.toInt() else 0xFFFFFFFF.toInt(),
-                    strokeWidth = 5f,
-                    isEraser = _uiState.value.activeTool == CanvasTool.ERASER
-                )
-                _uiState.update { it.copy(currentStroke = newStroke) }
+                if (_uiState.value.activeTool == CanvasTool.ERASER) {
+                    eraseStrokesAt(x, y)
+                } else {
+                    startNewStroke(x, y, pressure)
+                }
             }
             MotionEvent.ACTION_MOVE -> {
-                _uiState.value.currentStroke?.let { stroke ->
-                    val updatedPoints = stroke.points + StrokePoint(x, y, pressure)
-                    _uiState.update { it.copy(currentStroke = stroke.copy(points = updatedPoints)) }
+                if (_uiState.value.activeTool == CanvasTool.ERASER) {
+                    eraseStrokesAt(x, y)
+                } else {
+                    updateCurrentStroke(x, y, pressure)
                 }
             }
             MotionEvent.ACTION_UP -> {
-                _uiState.value.currentStroke?.let { stroke ->
-                    val updatedStrokes = _uiState.value.strokes + stroke
-                    _uiState.update {
-                        it.copy(
-                            strokes = updatedStrokes,
-                            currentStroke = null
-                        )
-                    }
-                    saveData(updatedStrokes)
+                if (_uiState.value.activeTool == CanvasTool.PEN) {
+                    finishStroke()
+                } else {
+                    // שמירת המצב לאחר מחיקה
+                    saveData(_uiState.value.strokes)
                 }
             }
         }
+    }
+
+
+// פונקציות עזר חדשות לסדר בקוד:
+
+    private fun startNewStroke(x: Float, y: Float, pressure: Float) {
+        val newStroke = Stroke(
+            points = listOf(StrokePoint(x, y, pressure)),
+            color = 0xFF000000.toInt(), // צבע שחור כרגע
+            strokeWidth = 5f,
+            isEraser = false
+        )
+        _uiState.update { it.copy(currentStroke = newStroke) }
+    }
+
+    private fun updateCurrentStroke(x: Float, y: Float, pressure: Float) {
+        _uiState.value.currentStroke?.let { stroke ->
+            val updatedPoints = stroke.points + StrokePoint(x, y, pressure)
+            _uiState.update { it.copy(currentStroke = stroke.copy(points = updatedPoints)) }
+        }
+    }
+
+    private fun finishStroke() {
+        _uiState.value.currentStroke?.let { stroke ->
+            val updatedStrokes = _uiState.value.strokes + stroke
+            _uiState.update { it.copy(strokes = updatedStrokes, currentStroke = null) }
+            saveData(updatedStrokes)
+        }
+    }
+
+    private fun eraseStrokesAt(x: Float, y: Float) {
+        _uiState.update { state ->
+            // סינון: משאירים רק קווים שאין להם אף נקודה קרובה מדי למחק (רדיוס של 20 פיקסלים)
+            val remainingStrokes = state.strokes.filterNot { stroke ->
+                stroke.points.any { pt ->
+                    val distance = Math.sqrt(
+                        Math.pow((pt.x - x).toDouble(), 2.0) +
+                                Math.pow((pt.y - y).toDouble(), 2.0)
+                    )
+                    distance < 25.0 // רגישות המחק
+                }
+            }
+
+            // עדכון המצב רק אם באמת נמחק משהו
+            if (remainingStrokes.size != state.strokes.size) {
+                state.copy(strokes = remainingStrokes)
+            } else {
+                state
+            }
+        }
+
     }
 
     private fun saveData(strokes: List<Stroke>) {
@@ -117,4 +183,8 @@ class CanvasViewModel @Inject constructor(
     fun setActiveTool(tool: CanvasTool) {
         _uiState.update { it.copy(activeTool = tool) }
     }
+    fun selectColor(color: Int) { _uiState.update { it.copy(selectedColor = color, activeTool = CanvasTool.PEN) } }
+    fun updateWidth(width: Float) { _uiState.update { it.copy(strokeWidth = width) } }
+
+
 }
