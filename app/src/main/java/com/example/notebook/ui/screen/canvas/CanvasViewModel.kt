@@ -115,7 +115,14 @@ class CanvasViewModel @Inject constructor(
 
         // התיקון האגרסיבי לעט הלנובו! כל כפתור שנלחץ בעט הופך את זה למחק
         // משתמשים בפעולת AND בינארית כדי לבדוק אם כפתור כלשהו מלבד כפתור "נגיעה" רגיל לחוץ
-        val isEraserButtonDown = isStylus && (btnState and MotionEvent.BUTTON_PRIMARY.inv()) != 0
+// ✅ הפתרון: בדיקה מדויקת של כפתור הסטייל הצדדי
+        val isEraserButtonDown = isStylus && (
+                (btnState and MotionEvent.BUTTON_STYLUS_PRIMARY != 0) ||
+                        (btnState and MotionEvent.BUTTON_SECONDARY != 0) ||
+                        (event.actionMasked == MotionEvent.ACTION_BUTTON_PRESS &&
+                                (event.actionButton == MotionEvent.BUTTON_STYLUS_PRIMARY ||
+                                        event.actionButton == MotionEvent.BUTTON_SECONDARY))
+                )
         val isHardwareEraser = toolType == MotionEvent.TOOL_TYPE_ERASER || isEraserButtonDown
 
         val currentTool = if (isHardwareEraser) CanvasTool.ERASER else _uiState.value.activeTool

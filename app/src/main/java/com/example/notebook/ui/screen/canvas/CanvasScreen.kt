@@ -152,9 +152,20 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
                         }
 
                         // התיקון של הלאסו נמצא כאן: הוא נשאר מצויר גם כשההרמנו את העט, כל עוד יש משהו מסומן!
+                        // ✅ אחרי:
+// הסטרוקים הרגילים - ללא הנבחרים (הם יצוירו בנפרד עם offset)
+                        val baseStrokes = if (uiState.selectionPageId == pageModel.page.id) {
+                            pageModel.strokes.filterNot { s -> uiState.selectedStrokes.any { it.id == s.id } }
+                        } else pageModel.strokes
+
+// חישוב ה-dragOffset מתוך selectedStrokes לעומת הנקודות המקוריות
+// (ה-ViewModel כבר מעדכן את selectedStrokes עם הקואורדינטות החדשות)
+// אז ה-offset הוא ההפרש בין המיקום הנוכחי למקורי — פשוט Offset.Zero כי ה-VM שומר קואורדינטות מוחלטות
                         DrawingCanvas(
                             activeTool = uiState.activeTool,
-                            strokes = displayStrokes,
+                            strokes = baseStrokes,
+                            selectedStrokes = if (uiState.selectionPageId == pageModel.page.id) uiState.selectedStrokes else emptyList(),
+                            dragOffset = Offset.Zero, // הקואורדינטות המוחלטות כבר ב-selectedStrokes
                             currentStroke = if (uiState.drawingPageId == pageModel.page.id) uiState.currentStroke else null,
                             lassoPath = if (uiState.drawingPageId == pageModel.page.id || uiState.selectionPageId == pageModel.page.id) uiState.lassoPath else emptyList(),
                             onAction = { event -> viewModel.handleMotionEvent(pageModel.page.id, event) }
