@@ -6,23 +6,19 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface NotebookDao {
+    // שינינו את השם כאן כדי שיתאים למה שה-Repository מחפש
     @Query("SELECT * FROM notebooks WHERE folderId = :folderId ORDER BY updatedAt DESC")
-    fun observeNotebooksInFolder(folderId: Long): Flow<List<NotebookEntity>>
+    fun getNotebooksByFolder(folderId: Long): Flow<List<NotebookEntity>>
 
     @Query("SELECT * FROM notebooks WHERE id = :id")
     suspend fun getNotebookById(id: Long): NotebookEntity?
 
-    @Insert(onConflict = OnConflictStrategy.ABORT)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertNotebook(notebook: NotebookEntity): Long
-
-    @Query("UPDATE notebooks SET strokeDataJson = :strokeJson, updatedAt = :updatedAt WHERE id = :id")
-    suspend fun saveStrokes(id: Long, strokeJson: String, updatedAt: Long = System.currentTimeMillis())
-
-    @Query("DELETE FROM notebooks WHERE id = :id")
-    suspend fun deleteNotebookById(id: Long)
-    @Query("SELECT * FROM notebooks WHERE id = :notebookId")
-    suspend fun getNotebookById(notebookId: Long): NotebookEntity?
 
     @Update
     suspend fun updateNotebook(notebook: NotebookEntity)
+
+    @Query("DELETE FROM notebooks WHERE id = :id")
+    suspend fun deleteNotebookById(id: Long)
 }

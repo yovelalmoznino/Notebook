@@ -8,8 +8,8 @@ import com.example.notebook.data.db.dao.FolderDao
 import com.example.notebook.data.db.dao.NotebookDao
 import com.example.notebook.data.db.entity.FolderEntity
 import com.example.notebook.data.db.entity.NotebookEntity
-
-import androidx.room.TypeConverters
+import androidx.room.TypeConverters // חשוב!
+import com.example.notebook.data.db.Converters
 
 @Database(
     entities = [FolderEntity::class, NotebookEntity::class],
