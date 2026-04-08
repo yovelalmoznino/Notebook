@@ -23,7 +23,8 @@ import javax.inject.Inject
 data class CanvasUiState(
     val strokes: List<Stroke> = emptyList(),
     val currentStroke: Stroke? = null,
-    val activeTool: CanvasTool = CanvasTool.PEN
+    val activeTool: CanvasTool = CanvasTool.PEN,
+    val notebookTitle: String = "טוען..." // הוספנו את זה
 )
 
 enum class CanvasTool {
@@ -56,9 +57,15 @@ class CanvasViewModel @Inject constructor(
             entity?.let {
                 val listType = object : TypeToken<List<Stroke>>() {}.type
                 val loadedStrokes: List<Stroke> = gson.fromJson(it.strokeDataJson, listType) ?: emptyList()
-                _uiState.update { state -> state.copy(strokes = loadedStrokes) }
+                _uiState.update { state ->
+                    state.copy(
+                        strokes = loadedStrokes,
+                        notebookTitle = it.title // עדכון הכותרת מה-DB
+                    )
+                }
             }
         }
+
     }
 
     fun handleMotionEvent(event: MotionEvent) {

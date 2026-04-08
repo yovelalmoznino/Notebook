@@ -9,7 +9,6 @@ import javax.inject.Singleton
 class NotebookRepository @Inject constructor(
     private val notebookDao: NotebookDao
 ) {
-    // השתמש בשם observeNotebooksInFolder מה-DAO
     fun getNotebooksByFolder(folderId: Long) = notebookDao.observeNotebooksInFolder(folderId)
 
     suspend fun insertNotebook(notebook: NotebookEntity) = notebookDao.insertNotebook(notebook)
@@ -18,5 +17,6 @@ class NotebookRepository @Inject constructor(
 
     suspend fun updateNotebook(notebook: NotebookEntity) = notebookDao.updateNotebook(notebook)
 
+    // תיקון: מחיקה לפי ID
     suspend fun deleteNotebook(notebook: NotebookEntity) = notebookDao.deleteNotebookById(notebook.id)
 }
