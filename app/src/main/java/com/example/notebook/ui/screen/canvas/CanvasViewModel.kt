@@ -109,25 +109,18 @@ class CanvasViewModel @Inject constructor(
     fun handleMotionEvent(pageId: Long, event: MotionEvent) {
         val x = event.x; val y = event.y; val pressure = event.pressure
 
-        // זיהוי מדויק ומתקדם במיוחד לעטי לנובו: קולט כל כפתור בזמן מגע
         val toolType = event.getToolType(0)
         val btnState = event.buttonState
         val isStylus = toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER
 
-        // אם הכלי מוגדר כמחק חומרה, או שזה סטיילוס ואחד הכפתורים הצדדיים לחוץ (> 1)
-        val isHardwareEraser = toolType == MotionEvent.TOOL_TYPE_ERASER || (isStylus && btnState > 1)
+        // התיקון האגרסיבי לעט הלנובו! כל כפתור שנלחץ בעט הופך את זה למחק
+        // משתמשים בפעולת AND בינארית כדי לבדוק אם כפתור כלשהו מלבד כפתור "נגיעה" רגיל לחוץ
+        val isEraserButtonDown = isStylus && (btnState and MotionEvent.BUTTON_PRIMARY.inv()) != 0
+        val isHardwareEraser = toolType == MotionEvent.TOOL_TYPE_ERASER || isEraserButtonDown
 
         val currentTool = if (isHardwareEraser) CanvasTool.ERASER else _uiState.value.activeTool
         if (currentTool == CanvasTool.IMAGE) return
 
-        // תיקון "תחיית המתים": מחסל כל ציור שתלוי באוויר ברגע שהחלפנו כלי (למחק, לאסו וכו')
-        if (currentTool != CanvasTool.PEN && currentTool != CanvasTool.HIGHLIGHTER && currentTool != CanvasTool.SHAPE) {
-            if (_uiState.value.currentStroke != null) {
-                _uiState.update { it.copy(currentStroke = null) }
-            }
-        }
-
-        // משחרר אוטומטית את בחירת הלאסו אם עברנו לכלי אחר
         if (currentTool != CanvasTool.LASSO && _uiState.value.hasLassoSelection) {
             releaseLassoSelection()
         }
@@ -135,20 +128,18 @@ class CanvasViewModel @Inject constructor(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 if (currentTool == CanvasTool.ERASER) {
+                    _uiState.update { it.copy(drawingPageId = pageId, currentStroke = null) }
                     eraseStrokesAt(pageId, x, y)
                 } else if (currentTool == CanvasTool.LASSO) {
                     if (_uiState.value.hasLassoSelection && _uiState.value.selectionPageId == pageId) {
                         if (isPointInPolygon(Offset(x, y), _uiState.value.lassoPath)) {
-                            // נגיעה בתוך הלאסו - מתחילים לגרור
                             lassoDragLastPoint = Offset(x, y)
                             _uiState.update { it.copy(drawingPageId = pageId) }
                         } else {
-                            // נגיעה מחוץ ללאסו - משחרר את הקיים ומתחיל חדש
                             releaseLassoSelection()
                             _uiState.update { it.copy(lassoPath = listOf(Offset(x, y)), hasLassoSelection = false, selectedStrokes = emptyList(), selectedImages = emptyList(), drawingPageId = pageId) }
                         }
                     } else {
-                        // יצירת לאסו חדש
                         _uiState.update { it.copy(lassoPath = listOf(Offset(x, y)), hasLassoSelection = false, selectedStrokes = emptyList(), selectedImages = emptyList(), drawingPageId = pageId) }
                     }
                 } else {
@@ -158,7 +149,13 @@ class CanvasViewModel @Inject constructor(
             }
             MotionEvent.ACTION_MOVE -> {
                 if (_uiState.value.drawingPageId == pageId) {
-                    if (currentTool == CanvasTool.ERASER) eraseStrokesAt(pageId, x, y)
+                    if (currentTool == CanvasTool.ERASER) {
+                        // אם לחצנו על הכפתור בעט "תוך כדי" ציור - נשמיד את הציור שנוצר עד עכשיו ונעבור למחיקה
+                        if (_uiState.value.currentStroke != null) {
+                            _uiState.update { it.copy(currentStroke = null) }
+                        }
+                        eraseStrokesAt(pageId, x, y)
+                    }
                     else if (currentTool == CanvasTool.LASSO) {
                         if (_uiState.value.hasLassoSelection && lassoDragLastPoint != null) {
                             val dx = x - lassoDragLastPoint!!.x
@@ -178,9 +175,14 @@ class CanvasViewModel @Inject constructor(
                 if (_uiState.value.drawingPageId == pageId) {
                     if (currentTool == CanvasTool.LASSO) {
                         if (_uiState.value.hasLassoSelection && lassoDragLastPoint != null) {
-                            lassoDragLastPoint = null // שומר את המיקום, אך הבחירה נשארת פעילה!
+                            lassoDragLastPoint = null
                         } else if (!_uiState.value.hasLassoSelection) finishLasso(pageId)
-                    } else if (currentTool != CanvasTool.ERASER) finishStroke(pageId)
+                    } else if (currentTool != CanvasTool.ERASER) {
+                        // מוודאים שאנחנו משלימים ציור רק אם הוא באמת קיים (ולא הושמד ע"י המחק)
+                        if (_uiState.value.currentStroke != null) {
+                            finishStroke(pageId)
+                        }
+                    }
 
                     if (currentTool != CanvasTool.LASSO) _uiState.update { it.copy(drawingPageId = null) }
                 }
@@ -196,7 +198,6 @@ class CanvasViewModel @Inject constructor(
         if (pageIndex != -1) {
             val pageModel = currentPages[pageIndex]
 
-            // מכניס את הפריטים שהוזזו חזרה לדף הראשי ומונע שכפולים
             val finalStrokes = pageModel.strokes.filterNot { old -> _uiState.value.selectedStrokes.any { it.id == old.id } } + _uiState.value.selectedStrokes
             val finalImages = pageModel.images.filterNot { old -> _uiState.value.selectedImages.any { it.id == old.id } } + _uiState.value.selectedImages
 
@@ -219,12 +220,10 @@ class CanvasViewModel @Inject constructor(
             val selectedI = pageImages.filter { img -> isPointInPolygon(Offset(img.x + img.width / 2, img.y + img.height / 2), path) }
 
             if (selectedS.isNotEmpty() || selectedI.isNotEmpty()) {
-                // מצאנו משהו! הבחירה נשארת פעילה על המסך
                 _uiState.update { it.copy(hasLassoSelection = true, selectedStrokes = selectedS, selectedImages = selectedI, selectionPageId = pageId, drawingPageId = null) }
                 return
             }
         }
-        // לא מצאנו כלום, מנקה את קו הלאסו
         clearLassoSelection()
     }
 

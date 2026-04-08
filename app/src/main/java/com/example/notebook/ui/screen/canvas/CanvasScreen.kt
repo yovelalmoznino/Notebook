@@ -133,10 +133,8 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
                     IconButton(onClick = { selectedPageForTemplate = pageModel.page.id }) { Icon(Icons.Rounded.Settings, "Page Settings", tint = ToolbarIcon) }
                     Box(modifier = Modifier.padding(bottom = 32.dp, start = 16.dp, end = 16.dp).fillMaxWidth().aspectRatio(0.7f).shadow(8.dp, RoundedCornerShape(4.dp)).background(Color.White).clipToBounds()) {
 
-                        // 1. שכבת הרקע הנמוכה ביותר (משבצות/שורות)
                         BackgroundCanvas(backgroundType = pageModel.background)
 
-                        // הכנת הנתונים למסך
                         val displayImages = if (uiState.selectionPageId == pageModel.page.id) {
                             pageModel.images.filterNot { img -> uiState.selectedImages.any { it.id == img.id } } + uiState.selectedImages
                         } else pageModel.images
@@ -145,7 +143,6 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
                             pageModel.strokes.filterNot { s -> uiState.selectedStrokes.any { it.id == s.id } } + uiState.selectedStrokes
                         } else pageModel.strokes
 
-                        // 2. שכבת התמונות האמצעית
                         displayImages.forEach { img ->
                             ResizableDraggableImage(
                                 img = img,
@@ -154,12 +151,12 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
                             )
                         }
 
-                        // 3. שכבת הציור העליונה שקולטת את העט
+                        // התיקון של הלאסו נמצא כאן: הוא נשאר מצויר גם כשההרמנו את העט, כל עוד יש משהו מסומן!
                         DrawingCanvas(
                             activeTool = uiState.activeTool,
                             strokes = displayStrokes,
                             currentStroke = if (uiState.drawingPageId == pageModel.page.id) uiState.currentStroke else null,
-                            lassoPath = if (uiState.drawingPageId == pageModel.page.id) uiState.lassoPath else emptyList(),
+                            lassoPath = if (uiState.drawingPageId == pageModel.page.id || uiState.selectionPageId == pageModel.page.id) uiState.lassoPath else emptyList(),
                             onAction = { event -> viewModel.handleMotionEvent(pageModel.page.id, event) }
                         )
                     }
@@ -172,7 +169,6 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
     }
 }
 
-// קומפוננטה חדשה וקלה לציור הרקע התחתון!
 @Composable
 fun BackgroundCanvas(backgroundType: PageBackground, modifier: Modifier = Modifier.fillMaxSize()) {
     Canvas(modifier = modifier) {
