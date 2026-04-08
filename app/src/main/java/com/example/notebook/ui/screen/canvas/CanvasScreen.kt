@@ -1,6 +1,8 @@
 package com.example.notebook.ui.screen.canvas
 
 import android.content.Intent
+import android.view.KeyEvent as AndroidKeyEvent
+import android.view.View
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -8,6 +10,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -35,7 +38,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,15 +50,6 @@ import com.example.notebook.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-fun calculateInSampleSize(options: android.graphics.BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
-    val height = options.outHeight; val width = options.outWidth; var inSampleSize = 1
-    if (height > reqHeight || width > reqWidth) {
-        val halfHeight = height / 2; val halfWidth = width / 2
-        while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) { inSampleSize *= 2 }
-    }
-    return inSampleSize
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewModel = hiltViewModel()) {
@@ -65,6 +59,29 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
     var showShapeMenu by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val view = LocalView.current
+
+    // שיטה חסינה לזיהוי הכפתור בעט: מאזין ישיר ל-View
+    // פותר את בעיית ה-nativeKeyEvent ומתאים ללנובו קוד 600
+    DisposableEffect(view) {
+        // הבטחה שה-View יכול לקבל פוקוס ואירועי מקלדת
+        view.isFocusableInTouchMode = true
+        view.requestFocus()
+
+        val listener = View.OnKeyListener { _, keyCode, event ->
+            if (keyCode == 600) {
+                if (event.action == AndroidKeyEvent.ACTION_DOWN) {
+                    viewModel.setStylusButtonState(true)
+                } else if (event.action == AndroidKeyEvent.ACTION_UP) {
+                    viewModel.setStylusButtonState(false)
+                }
+                true
+            } else false
+        }
+        view.setOnKeyListener(listener)
+        onDispose { view.setOnKeyListener(null) }
+    }
+
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
             try { context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (e: Exception) {}
@@ -93,7 +110,7 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
                                 DropdownMenuItem(text = { Text("Circle") }, onClick = { viewModel.setShapeMode(ShapeType.CIRCLE); showShapeMenu = false }, leadingIcon = { Icon(Icons.Rounded.RadioButtonUnchecked, null) })
                             }
                         }
-                        Divider(modifier = Modifier.height(24.dp).width(1.dp), color = Color.Gray.copy(alpha = 0.3f))
+                        Spacer(modifier = Modifier.height(24.dp).width(1.dp).background(Color.Gray.copy(alpha = 0.3f)))
                         ToolButton(Icons.Rounded.Gesture, uiState.activeTool == CanvasTool.LASSO) { viewModel.setActiveTool(CanvasTool.LASSO) }
                         ToolButton(Icons.Rounded.Image, uiState.activeTool == CanvasTool.IMAGE) {
                             if (uiState.activeTool == CanvasTool.IMAGE) imagePicker.launch("image/*") else viewModel.setActiveTool(CanvasTool.IMAGE)
@@ -135,7 +152,6 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
 
                         BackgroundCanvas(backgroundType = pageModel.background)
 
-                        // תמונות: אותה לוגיקה, לא שינינו כלום
                         val displayImages = if (uiState.selectionPageId == pageModel.page.id) {
                             pageModel.images.filterNot { img -> uiState.selectedImages.any { it.id == img.id } } + uiState.selectedImages
                         } else pageModel.images
@@ -148,9 +164,6 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
                             )
                         }
 
-                        // *** תיקון Ghosting ***
-                        // baseStrokes = כל הסטרוקים של הדף, פחות אלה שנבחרו (hiddenStrokeIds)
-                        // כך הם לא מצוירים פעמיים — פעם אחת דרך pageModel ופעם שנייה דרך selectedStrokes
                         val baseStrokes = if (uiState.selectionPageId == pageModel.page.id) {
                             pageModel.strokes.filterNot { s -> s.id in uiState.hiddenStrokeIds }
                         } else {
@@ -290,6 +303,24 @@ fun ColorPickerAndWidthDialog(title: String, initialColor: Color, initialWidth: 
 fun TemplateSelectionDialog(onDismiss: () -> Unit, onSelect: (PageBackground) -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss, confirmButton = {}, title = { Text("Select Template") },
-        text = { Column { PageBackground.values().forEach { type -> TextButton(onClick = { onSelect(type) }, modifier = Modifier.fillMaxWidth()) { Text(type.name) } } } }
+        text = {
+            Column {
+                // תיקון קריטי: שימוש ב-values() במקום entries למניעת שגיאת הידור בגרסאות ישנות
+                PageBackground.values().forEach { type ->
+                    TextButton(onClick = { onSelect(type) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(type.name)
+                    }
+                }
+            }
+        }
     )
+}
+
+fun calculateInSampleSize(options: android.graphics.BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
+    val height = options.outHeight; val width = options.outWidth; var inSampleSize = 1
+    if (height > reqHeight || width > reqWidth) {
+        val halfHeight = height / 2; val halfWidth = width / 2
+        while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) { inSampleSize *= 2 }
+    }
+    return inSampleSize
 }

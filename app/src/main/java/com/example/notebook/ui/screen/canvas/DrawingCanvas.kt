@@ -38,7 +38,6 @@ fun DrawingCanvas(
 ) {
     Box(modifier = modifier.fillMaxSize()) {
 
-        // 1. שכבת הציור הויזואלית (כאן אנחנו מציירים הכל)
         Canvas(modifier = Modifier.fillMaxSize()) {
             strokes.forEach { drawStrokePath(it, Offset.Zero) }
             selectedStrokes.forEach { drawStrokePath(it, dragOffset) }
@@ -54,20 +53,19 @@ fun DrawingCanvas(
                     path = path,
                     color = Color(0xFF3b82f6),
                     style = DrawStroke(
-                        width = 8f, // שימוש בפיקסלים ישירים כדי למנוע בעיות של dp
+                        width = 4f,
                         pathEffect = PathEffect.dashPathEffect(floatArrayOf(20f, 20f))
                     )
                 )
             }
         }
 
-        // 2. שכבת המגע הגולמית - קולטת את הלחיצות של עט הלנובו בלי ש-Compose יסנן אותן
         AndroidView(
             factory = { context ->
                 View(context).apply {
                     setOnTouchListener { _, event ->
                         if (activeTool == CanvasTool.IMAGE) {
-                            false // נותן לתמונות שמתחת להגיב לגרירה
+                            false
                         } else {
                             val toolType = event.getToolType(0)
                             val isStylus = toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER
@@ -85,16 +83,14 @@ fun DrawingCanvas(
                                 onAction(event)
                                 true
                             } else {
-                                false // אצבע במצב רגיל תאפשר גלילה
+                                false
                             }
                         }
                     }
 
-                    // תמיכה בריחוף (Hover) וכפתורים
+                    // תיקון: מעבירים את כל האירועים הגנריים (כולל לחיצות כפתור בריחוף) ל-ViewModel
                     setOnGenericMotionListener { _, event ->
-                        if (activeTool != CanvasTool.IMAGE &&
-                            (event.actionMasked == MotionEvent.ACTION_HOVER_MOVE ||
-                                    event.actionMasked == MotionEvent.ACTION_HOVER_ENTER)) {
+                        if (activeTool != CanvasTool.IMAGE) {
                             onAction(event)
                             true
                         } else {
@@ -102,9 +98,8 @@ fun DrawingCanvas(
                         }
                     }
 
-                    // אופטימיזציה לזמן תגובה אפסי (Latency)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                        requestUnbufferedDispatch(InputDevice.SOURCE_CLASS_NONE) // תיקון השגיאה מהתמונה
+                        requestUnbufferedDispatch(InputDevice.SOURCE_CLASS_POINTER)
                     }
                 }
             },
