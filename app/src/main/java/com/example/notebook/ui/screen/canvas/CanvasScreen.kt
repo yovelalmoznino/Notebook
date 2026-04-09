@@ -23,7 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds // הייבוא שהיה חסר
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -96,7 +96,7 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
                 actions = {
                     if (uiState.hasLassoSelection) {
                         IconButton(onClick = { viewModel.copyLassoSelection() }) { Icon(Icons.Rounded.ContentCopy, null) }
-                        IconButton(onClick = { viewModel.deleteLassoSelection() }) { Icon(Icons.Rounded.Delete, null, tint = Color.Red) } // השורה שגרמה לשגיאה
+                        IconButton(onClick = { viewModel.deleteLassoSelection() }) { Icon(Icons.Rounded.Delete, null, tint = Color.Red) }
                     }
                     if (uiState.copiedStrokes.isNotEmpty() || uiState.copiedImages.isNotEmpty()) {
                         IconButton(onClick = { viewModel.pasteSelection(uiState.pages.firstOrNull()?.page?.id ?: 0L) }) { Icon(Icons.Rounded.ContentPaste, null) }
@@ -161,7 +161,7 @@ fun ToolButton(icon: ImageVector, isActive: Boolean, onClick: () -> Unit) {
 
 @Composable
 fun PageContainer(page: PageUiModel, uiState: CanvasUiState, viewModel: CanvasViewModel) {
-    Box(modifier = Modifier.padding(16.dp).fillMaxWidth().aspectRatio(0.7f).shadow(8.dp).background(Color.White).clipToBounds()) { // הקריאה ל-clipToBounds
+    Box(modifier = Modifier.padding(16.dp).fillMaxWidth().aspectRatio(0.7f).shadow(8.dp).background(Color.White).clipToBounds()) {
         BackgroundCanvas(page.background)
         DrawingCanvas(
             activeTool = uiState.activeTool,
@@ -171,7 +171,9 @@ fun PageContainer(page: PageUiModel, uiState: CanvasUiState, viewModel: CanvasVi
             currentStroke = if (uiState.drawingPageId == page.page.id) uiState.currentStroke else null,
             lassoPath = if (uiState.drawingPageId == page.page.id || uiState.selectionPageId == page.page.id) uiState.lassoPath else emptyList(),
             selectionBounds = if (uiState.selectionPageId == page.page.id) uiState.selectionBounds else null,
-            onAction = { event -> viewModel.handleMotionEvent(page.page.id, event) }
+            onDrawAction = { action, x, y, pressure, isEraser ->
+                viewModel.handleDrawAction(page.page.id, action, x, y, pressure, isEraser)
+            }
         )
         page.images.forEach { img ->
             val isSelected = uiState.selectedImages.any { it.id == img.id }

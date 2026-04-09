@@ -1,11 +1,10 @@
 package com.example.notebook.ui.screen.canvas
 
-import android.view.MotionEvent
-import android.view.View
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -13,11 +12,15 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStyle
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerId
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.pointerInput
 import com.example.notebook.data.model.*
 import com.example.notebook.data.model.Stroke as CanvasStroke
 import kotlin.math.*
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun DrawingCanvas(
     activeTool: CanvasTool,
@@ -27,9 +30,79 @@ fun DrawingCanvas(
     currentStroke: CanvasStroke?,
     lassoPath: List<Offset>,
     selectionBounds: Rect?,
-    onAction: (MotionEvent) -> Unit
+    onDrawAction: (action: Int, x: Float, y: Float, pressure: Float, isEraser: Boolean) -> Unit
 ) {
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(activeTool) {
+                awaitPointerEventScope {
+                    var activePenId: PointerId? = null
+                    var lastStylusTime = 0L
+
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val pointers = event.changes
+
+                        // 1. האם המערכת רואה עט אמיתי (אפילו רק מרחף באוויר מעל המסך)?
+                        val realStylus = pointers.firstOrNull {
+                            it.type == PointerType.Stylus || it.type == PointerType.Eraser
+                        }
+
+                        if (realStylus != null) {
+                            lastStylusTime = System.currentTimeMillis() // שומרים את הרגע האחרון שבו זיהינו נוכחות של העט
+                        }
+
+                        // אם ראינו עט ב-800 המילישניות האחרונות, אנחנו מניחים שהמשתמש במצב כתיבה פעיל
+                        val isWritingMode = (System.currentTimeMillis() - lastStylusTime) < 800L
+
+                        // 2. החלפה חכמה לעט האמיתי (מתקן בעיות של מגע כף יד או זיהוי איטי במסכי מחשב)
+                        if (activePenId != null && realStylus != null && realStylus.id != activePenId && realStylus.pressed) {
+                            // המערכת בדיוק קלטה שזה עט אמיתי בזמן שאנחנו עוקבים אחרי מגע שהתחיל כ"אצבע" שגויה - נחליף לעט!
+                            onDrawAction(1, 0f, 0f, 0f, false)
+                            activePenId = realStylus.id
+                            onDrawAction(0, realStylus.position.x, realStylus.position.y, realStylus.pressure, realStylus.type == PointerType.Eraser)
+                        }
+
+                        // 3. איתור המגע שאחריו אנחנו צריכים לעקוב כדי לצייר
+                        val targetPointer = pointers.firstOrNull { it.id == activePenId }
+                            ?: realStylus?.takeIf { it.pressed }
+                            ?: pointers.firstOrNull { activeTool == CanvasTool.LASSO && it.pressed }
+                            // הקסם: אם אנחנו במצב כתיבה ויש מכה מהירה במסך, נניח שזה העט ונתפוס את המגע לפני שהגלילה תגנוב אותו
+                            ?: pointers.firstOrNull { isWritingMode && it.pressed }
+
+                        if (targetPointer != null) {
+                            // משתיקים את כל המגעים באופן אגרסיבי כדי למנוע מגלילת העמוד לקפוץ
+                            pointers.forEach { if (it.pressed || it.previousPressed) it.consume() }
+
+                            val isEraser = targetPointer.type == PointerType.Eraser
+
+                            if (targetPointer.pressed) {
+                                if (activePenId != targetPointer.id) {
+                                    // התחלת ציור של קו חדש
+                                    activePenId = targetPointer.id
+                                    onDrawAction(0, targetPointer.position.x, targetPointer.position.y, targetPointer.pressure, isEraser)
+                                } else {
+                                    // תנועה של הקו - ציור של כל הנקודות ההיסטוריות שהמערכת "ארזה" (קריטי לקשקוש מהיר)
+                                    targetPointer.historical.forEach { hist ->
+                                        onDrawAction(2, hist.position.x, hist.position.y, targetPointer.pressure, isEraser)
+                                    }
+                                    onDrawAction(2, targetPointer.position.x, targetPointer.position.y, targetPointer.pressure, isEraser)
+                                }
+                            } else if (!targetPointer.pressed && activePenId == targetPointer.id) {
+                                // המשתמש הרים את העט מהמסך - סיום הקו
+                                onDrawAction(1, targetPointer.position.x, targetPointer.position.y, targetPointer.pressure, isEraser)
+                                activePenId = null
+                            }
+                        } else if (activePenId != null) {
+                            // איבוד פתאומי של מגע
+                            onDrawAction(1, 0f, 0f, 0f, false)
+                            activePenId = null
+                        }
+                    }
+                }
+            }
+    ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             strokes.forEach { drawComplexStroke(it, Offset.Zero) }
             selectedStrokes.forEach { drawComplexStroke(it, dragOffset) }
@@ -50,22 +123,6 @@ fun DrawingCanvas(
                 drawCircle(Color(0xFF3b82f6), radius = 18f, center = Offset(b.right, b.bottom), style = DrawStyle(width = 3f))
             }
         }
-        AndroidView(
-            factory = { context ->
-                View(context).apply {
-                    setOnTouchListener { v, event ->
-                        val toolType = event.getToolType(0)
-                        if (toolType == MotionEvent.TOOL_TYPE_FINGER && activeTool != CanvasTool.LASSO) false
-                        else {
-                            v.parent.requestDisallowInterceptTouchEvent(true)
-                            onAction(event)
-                            true
-                        }
-                    }
-                }
-            },
-            modifier = Modifier.fillMaxSize()
-        )
     }
 }
 

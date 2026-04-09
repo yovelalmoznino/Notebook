@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
-import android.view.MotionEvent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.lifecycle.SavedStateHandle
@@ -92,15 +91,11 @@ class CanvasViewModel @Inject constructor(
         _uiState.update { it.copy(pages = pageModels) }
     }
 
-    fun handleMotionEvent(pageId: Long, event: MotionEvent) {
-        val toolType = event.getToolType(0)
-        if (toolType == MotionEvent.TOOL_TYPE_FINGER && _uiState.value.activeTool != CanvasTool.LASSO) return
+    fun handleDrawAction(pageId: Long, action: Int, x: Float, y: Float, pressure: Float, isEraser: Boolean) {
+        val currentTool = if (isEraser) CanvasTool.ERASER else _uiState.value.activeTool
 
-        val x = event.x; val y = event.y
-        val currentTool = if (toolType == MotionEvent.TOOL_TYPE_ERASER) CanvasTool.ERASER else _uiState.value.activeTool
-
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+        when (action) {
+            0 -> { // ACTION_DOWN
                 _uiState.update { it.copy(drawingPageId = pageId, isDrawing = true) }
                 if (currentTool == CanvasTool.LASSO) {
                     val bounds = _uiState.value.selectionBounds
@@ -117,10 +112,10 @@ class CanvasViewModel @Inject constructor(
                 } else if (currentTool == CanvasTool.ERASER) {
                     eraseStrokesAt(pageId, x, y)
                 } else {
-                    startNewStroke(x, y, event.pressure, currentTool)
+                    startNewStroke(x, y, pressure, currentTool)
                 }
             }
-            MotionEvent.ACTION_MOVE -> {
+            2 -> { // ACTION_MOVE
                 if (_uiState.value.drawingPageId == pageId) {
                     if (currentTool == CanvasTool.LASSO) {
                         val bounds = _uiState.value.selectionBounds
@@ -137,11 +132,11 @@ class CanvasViewModel @Inject constructor(
                     } else if (currentTool == CanvasTool.ERASER) {
                         eraseStrokesAt(pageId, x, y)
                     } else {
-                        updateCurrentStroke(x, y, event.pressure)
+                        updateCurrentStroke(x, y, pressure)
                     }
                 }
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+            1 -> { // ACTION_UP or CANCEL
                 if (_uiState.value.drawingPageId == pageId) {
                     if (currentTool == CanvasTool.LASSO) {
                         if (!_uiState.value.hasLassoSelection && _uiState.value.lassoPath.size > 2) finishLasso(pageId)
