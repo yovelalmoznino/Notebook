@@ -87,26 +87,30 @@ class CanvasViewModel @Inject constructor(
     private fun executeStylusAction(action: StylusAction) {
         when (action) {
             StylusAction.TOGGLE_PEN_ERASER -> toggleToolFromButton()
-            StylusAction.UNDO              -> undo()
-            StylusAction.REDO              -> redo()
-            StylusAction.CYCLE_PEN_TYPE    -> cyclePenType()
-            StylusAction.CYCLE_COLOR       -> cycleColor()
-            StylusAction.OPEN_PALETTE      -> _uiState.update { it.copy(showColorWheel = true) }
-            StylusAction.NONE              -> {}
+            StylusAction.UNDO -> undo()
+            StylusAction.REDO -> redo()
+            StylusAction.CYCLE_PEN_TYPE -> cyclePenType()
+            StylusAction.CYCLE_COLOR -> cycleColor()
+            StylusAction.OPEN_PALETTE -> _uiState.update { it.copy(showColorWheel = true) }
+            StylusAction.NONE -> {}
         }
     }
 
     private fun cyclePenType() {
-        val types   = PenType.values()
+        val types = PenType.values()
         val current = _uiState.value.activePenType
-        val next    = types[(types.indexOf(current) + 1) % types.size]
+        val next = types[(types.indexOf(current) + 1) % types.size]
         _uiState.update { it.copy(activePenType = next) }
     }
 
     private fun cycleColor() {
         val colors = listOf(
-            0xFF2D3436.toInt(), 0xFFD63031.toInt(), 0xFF0984E3.toInt(),
-            0xFF00B894.toInt(), 0xFF6C5CE7.toInt(), 0xFFE84393.toInt()
+            0xFF2D3436.toInt(),
+            0xFFD63031.toInt(),
+            0xFF0984E3.toInt(),
+            0xFF00B894.toInt(),
+            0xFF6C5CE7.toInt(),
+            0xFFE84393.toInt()
         )
         val current = _uiState.value.penColor
         val idx = colors.indexOfFirst { it == current }.let { if (it == -1) 0 else it }
@@ -116,12 +120,17 @@ class CanvasViewModel @Inject constructor(
     fun setStylusConfig(config: StylusButtonConfig) {
         _uiState.update { it.copy(stylusConfig = config, showStylusConfigDialog = false) }
     }
-    fun showStylusConfigDialog()    = _uiState.update { it.copy(showStylusConfigDialog = true) }
-    fun dismissStylusConfigDialog() = _uiState.update { it.copy(showStylusConfigDialog = false) }
 
-    // ── Undo / Redo ──────────────────────────────────────────────────
+    fun showStylusConfigDialog() {
+        _uiState.update { it.copy(showStylusConfigDialog = true) }
+    }
+
+    fun dismissStylusConfigDialog() {
+        _uiState.update { it.copy(showStylusConfigDialog = false) }
+    }
+
     private fun pushUndoSnapshot() {
-        val snap = _uiState.value.pages
+        val snap = _uiState.value.pages.map { it.copy() }
         _uiState.update {
             it.copy(
                 undoStack = (it.undoStack + listOf(snap)).takeLast(30),
@@ -133,12 +142,16 @@ class CanvasViewModel @Inject constructor(
     fun undo() {
         val stack = _uiState.value.undoStack
         if (stack.isEmpty()) return
+
         val prev = stack.last()
         _uiState.update {
             it.copy(
-                pages     = prev,
+                pages = prev,
                 undoStack = stack.dropLast(1),
-                redoStack = it.redoStack + listOf(it.pages)
+                redoStack = it.redoStack + listOf(it.pages),
+                currentStroke = null,
+                drawingPageId = null,
+                isDrawing = false
             )
         }
         prev.forEach { savePageToDb(it) }
@@ -147,18 +160,21 @@ class CanvasViewModel @Inject constructor(
     fun redo() {
         val stack = _uiState.value.redoStack
         if (stack.isEmpty()) return
+
         val next = stack.last()
         _uiState.update {
             it.copy(
-                pages     = next,
+                pages = next,
                 redoStack = stack.dropLast(1),
-                undoStack = it.undoStack + listOf(it.pages)
+                undoStack = it.undoStack + listOf(it.pages),
+                currentStroke = null,
+                drawingPageId = null,
+                isDrawing = false
             )
         }
         next.forEach { savePageToDb(it) }
     }
 
-    // ── Load ──────────────────────────────────────────────────────────
     private fun loadNotebookData() {
         viewModelScope.launch {
             repository.ensureFirstPageExists(notebookId)
@@ -169,38 +185,58 @@ class CanvasViewModel @Inject constructor(
     }
 
     private suspend fun refreshPagesFromDb() {
-        val pages          = repository.getPages(notebookId)
+        val pages = repository.getPages(notebookId)
         val strokeListType = object : TypeToken<List<Stroke>>() {}.type
-        val imageListType  = object : TypeToken<List<CanvasImage>>() {}.type
+        val imageListType = object : TypeToken<List<CanvasImage>>() {}.type
+
         val pageModels = pages.map { page ->
             val strokes: List<Stroke> = try {
                 gson.fromJson(page.strokeDataJson, strokeListType) ?: emptyList()
-            } catch (_: Exception) { emptyList() }
+            } catch (_: Exception) {
+                emptyList()
+            }
+
             val images: List<CanvasImage> = try {
                 gson.fromJson(page.imageDataJson, imageListType) ?: emptyList()
-            } catch (_: Exception) { emptyList() }
+            } catch (_: Exception) {
+                emptyList()
+            }
+
             PageUiModel(
-                page,
-                strokes.map { if (it.id.isEmpty()) it.copy(id = UUID.randomUUID().toString()) else it },
-                images,
-                runCatching { PageBackground.valueOf(page.backgroundType) }
-                    .getOrDefault(PageBackground.PLAIN)
+                page = page,
+                strokes = strokes.map {
+                    if (it.id.isEmpty()) it.copy(id = UUID.randomUUID().toString()) else it
+                },
+                images = images,
+                background = runCatching {
+                    PageBackground.valueOf(page.backgroundType)
+                }.getOrDefault(PageBackground.PLAIN)
             )
         }
+
         _uiState.update { it.copy(pages = pageModels) }
     }
 
-    // ── Draw Actions ──────────────────────────────────────────────────
     fun handleDrawAction(
-        pageId: Long, action: Int,
-        x: Float, y: Float,
-        pressure: Float, isEraser: Boolean
+        pageId: Long,
+        action: Int,
+        x: Float,
+        y: Float,
+        pressure: Float,
+        isEraser: Boolean
     ) {
         val currentTool = if (isEraser) CanvasTool.ERASER else _uiState.value.activeTool
 
         when (action) {
-            0 -> { // ACTION_DOWN
-                _uiState.update { it.copy(drawingPageId = pageId, isDrawing = true) }
+            0 -> {
+                _uiState.update {
+                    it.copy(
+                        drawingPageId = pageId,
+                        isDrawing = true,
+                        currentStroke = null
+                    )
+                }
+
                 when (currentTool) {
                     CanvasTool.LASSO -> {
                         val bounds = _uiState.value.selectionBounds
@@ -209,69 +245,99 @@ class CanvasViewModel @Inject constructor(
                                 isResizing = true
                                 lassoDragLastPoint = Offset(x, y)
                             }
-                            _uiState.value.hasLassoSelection &&
-                                    bounds?.contains(Offset(x, y)) == true -> {
+                            _uiState.value.hasLassoSelection && bounds?.contains(Offset(x, y)) == true -> {
                                 lassoDragLastPoint = Offset(x, y)
                                 isResizing = false
                             }
                             else -> {
                                 releaseLassoSelection()
                                 _uiState.update {
-                                    it.copy(lassoPath = listOf(Offset(x, y)), hasLassoSelection = false)
+                                    it.copy(
+                                        lassoPath = listOf(Offset(x, y)),
+                                        hasLassoSelection = false
+                                    )
                                 }
                             }
                         }
                     }
+
                     CanvasTool.ERASER -> eraseStrokesAt(pageId, x, y)
                     else -> startNewStroke(x, y, pressure, currentTool)
                 }
             }
-            2 -> { // ACTION_MOVE
-                if (_uiState.value.drawingPageId == pageId) {
-                    when (currentTool) {
-                        CanvasTool.LASSO -> {
-                            val bounds = _uiState.value.selectionBounds
-                            when {
-                                isResizing && lassoDragLastPoint != null && bounds != null -> {
-                                    val scale = hypot(x - bounds.left, y - bounds.top) /
-                                            hypot(
-                                                lassoDragLastPoint!!.x - bounds.left,
-                                                lassoDragLastPoint!!.y - bounds.top
-                                            )
-                                    if (!scale.isNaN() && scale > 0) resizeLassoSelection(scale)
-                                    lassoDragLastPoint = Offset(x, y)
+
+            2 -> {
+                if (_uiState.value.drawingPageId != pageId) return
+
+                when (currentTool) {
+                    CanvasTool.LASSO -> {
+                        val bounds = _uiState.value.selectionBounds
+                        when {
+                            isResizing && lassoDragLastPoint != null && bounds != null -> {
+                                val startDistance = hypot(
+                                    lassoDragLastPoint!!.x - bounds.left,
+                                    lassoDragLastPoint!!.y - bounds.top
+                                )
+                                val endDistance = hypot(x - bounds.left, y - bounds.top)
+                                val scale = if (startDistance > 0f) endDistance / startDistance else 1f
+
+                                if (!scale.isNaN() && scale > 0f) {
+                                    resizeLassoSelection(scale)
                                 }
-                                lassoDragLastPoint != null -> {
-                                    moveLassoSelection(
-                                        x - lassoDragLastPoint!!.x,
-                                        y - lassoDragLastPoint!!.y
-                                    )
-                                    lassoDragLastPoint = Offset(x, y)
-                                }
-                                else -> _uiState.update {
-                                    it.copy(lassoPath = it.lassoPath + Offset(x, y))
-                                }
+                                lassoDragLastPoint = Offset(x, y)
+                            }
+
+                            lassoDragLastPoint != null -> {
+                                moveLassoSelection(
+                                    x - lassoDragLastPoint!!.x,
+                                    y - lassoDragLastPoint!!.y
+                                )
+                                lassoDragLastPoint = Offset(x, y)
+                            }
+
+                            else -> {
+                                _uiState.update { it.copy(lassoPath = it.lassoPath + Offset(x, y)) }
                             }
                         }
-                        CanvasTool.ERASER -> eraseStrokesAt(pageId, x, y)
-                        else -> updateCurrentStroke(x, y, pressure)
                     }
+
+                    CanvasTool.ERASER -> eraseStrokesAt(pageId, x, y)
+                    else -> updateCurrentStroke(x, y, pressure)
                 }
             }
-            1 -> { // ACTION_UP
-                if (_uiState.value.drawingPageId == pageId) {
-                    when (currentTool) {
-                        CanvasTool.LASSO -> {
-                            if (!_uiState.value.hasLassoSelection &&
-                                _uiState.value.lassoPath.size > 2
-                            ) finishLasso(pageId)
-                            lassoDragLastPoint = null
-                            isResizing = false
-                        }
-                        CanvasTool.ERASER -> {}
-                        else -> finishStroke(pageId)
+
+            1 -> {
+                if (_uiState.value.drawingPageId != pageId) {
+                    _uiState.update {
+                        it.copy(
+                            drawingPageId = null,
+                            isDrawing = false,
+                            currentStroke = null
+                        )
                     }
-                    _uiState.update { it.copy(drawingPageId = null, isDrawing = false) }
+                    return
+                }
+
+                when (currentTool) {
+                    CanvasTool.LASSO -> {
+                        if (!_uiState.value.hasLassoSelection && _uiState.value.lassoPath.size > 2) {
+                            finishLasso(pageId)
+                        }
+                        lassoDragLastPoint = null
+                        isResizing = false
+                    }
+
+                    CanvasTool.ERASER -> {}
+
+                    else -> finishStroke(pageId)
+                }
+
+                _uiState.update {
+                    it.copy(
+                        drawingPageId = null,
+                        isDrawing = false,
+                        currentStroke = null
+                    )
                 }
             }
         }
@@ -279,12 +345,17 @@ class CanvasViewModel @Inject constructor(
 
     private fun eraseStrokesAt(pageId: Long, x: Float, y: Float) {
         val pages = _uiState.value.pages.toMutableList()
-        val idx   = pages.indexOfFirst { it.page.id == pageId }
+        val idx = pages.indexOfFirst { it.page.id == pageId }
+
         if (idx != -1) {
-            val remaining = pages[idx].strokes.filterNot { s ->
-                s.points.any { pt -> hypot(pt.x - x, pt.y - y) < 40f }
+            val remaining = pages[idx].strokes.filterNot { stroke ->
+                stroke.points.any { point ->
+                    hypot(point.x - x, point.y - y) < 40f
+                }
             }
+
             if (remaining.size != pages[idx].strokes.size) {
+                pushUndoSnapshot()
                 pages[idx] = pages[idx].copy(strokes = remaining)
                 _uiState.update { it.copy(pages = pages) }
                 savePageToDb(pages[idx])
@@ -295,248 +366,363 @@ class CanvasViewModel @Inject constructor(
     private fun finishLasso(pageId: Long) {
         val path = _uiState.value.lassoPath
         val page = _uiState.value.pages.find { it.page.id == pageId } ?: return
-        val selS = page.strokes.filter { s ->
-            s.points.any { isPointInPolygon(Offset(it.x, it.y), path) }
+
+        val selectedStrokeList = page.strokes.filter { stroke ->
+            stroke.points.any { point -> isPointInPolygon(Offset(point.x, point.y), path) }
         }
-        val selI = page.images.filter { img ->
-            isPointInPolygon(Offset(img.x + img.width / 2, img.y + img.height / 2), path)
+
+        val selectedImageList = page.images.filter { image ->
+            isPointInPolygon(
+                Offset(image.x + image.width / 2f, image.y + image.height / 2f),
+                path
+            )
         }
-        if (selS.isNotEmpty() || selI.isNotEmpty()) {
-            val bounds = calculateBounds(selS, selI)
+
+        if (selectedStrokeList.isNotEmpty() || selectedImageList.isNotEmpty()) {
+            val bounds = calculateBounds(selectedStrokeList, selectedImageList)
             _uiState.update {
                 it.copy(
                     hasLassoSelection = true,
-                    selectedStrokes   = selS,
-                    selectedImages    = selI,
-                    selectionPageId   = pageId,
-                    hiddenStrokeIds   = selS.map { s -> s.id }.toSet(),
-                    selectionBounds   = bounds,
-                    lassoPath         = emptyList()
+                    selectedStrokes = selectedStrokeList,
+                    selectedImages = selectedImageList,
+                    selectionPageId = pageId,
+                    hiddenStrokeIds = selectedStrokeList.map { stroke -> stroke.id }.toSet(),
+                    selectionBounds = bounds,
+                    lassoPath = emptyList()
                 )
             }
-        } else _uiState.update { it.copy(lassoPath = emptyList()) }
+        } else {
+            _uiState.update { it.copy(lassoPath = emptyList()) }
+        }
     }
 
     private fun moveLassoSelection(dx: Float, dy: Float) {
-        val s       = _uiState.value
-        val updatedS = s.selectedStrokes.map {
-            it.copy(points = it.points.map { p -> p.copy(x = p.x + dx, y = p.y + dy) })
+        val state = _uiState.value
+
+        val updatedStrokes = state.selectedStrokes.map { stroke ->
+            stroke.copy(
+                points = stroke.points.map { point ->
+                    point.copy(x = point.x + dx, y = point.y + dy)
+                }
+            )
         }
-        val updatedI = s.selectedImages.map { it.copy(x = it.x + dx, y = it.y + dy) }
+
+        val updatedImages = state.selectedImages.map { image ->
+            image.copy(x = image.x + dx, y = image.y + dy)
+        }
+
         _uiState.update {
             it.copy(
-                selectedStrokes = updatedS,
-                selectedImages  = updatedI,
-                selectionBounds = calculateBounds(updatedS, updatedI)
+                selectedStrokes = updatedStrokes,
+                selectedImages = updatedImages,
+                selectionBounds = calculateBounds(updatedStrokes, updatedImages)
             )
         }
     }
 
     private fun resizeLassoSelection(scale: Float) {
-        val s      = _uiState.value
-        val bounds = s.selectionBounds ?: return
-        val pivot  = Offset(bounds.left, bounds.top)
-        val updatedS = s.selectedStrokes.map { stroke ->
-            stroke.copy(points = stroke.points.map { pt ->
-                StrokePoint(
-                    pivot.x + (pt.x - pivot.x) * scale,
-                    pivot.y + (pt.y - pivot.y) * scale,
-                    pt.pressure
-                )
-            })
-        }
-        val updatedI = s.selectedImages.map { img ->
-            img.copy(
-                x      = pivot.x + (img.x - pivot.x) * scale,
-                y      = pivot.y + (img.y - pivot.y) * scale,
-                width  = img.width  * scale,
-                height = img.height * scale
+        val state = _uiState.value
+        val bounds = state.selectionBounds ?: return
+        val pivot = Offset(bounds.left, bounds.top)
+
+        val updatedStrokes = state.selectedStrokes.map { stroke ->
+            stroke.copy(
+                points = stroke.points.map { point ->
+                    StrokePoint(
+                        x = pivot.x + (point.x - pivot.x) * scale,
+                        y = pivot.y + (point.y - pivot.y) * scale,
+                        pressure = point.pressure
+                    )
+                }
             )
         }
+
+        val updatedImages = state.selectedImages.map { image ->
+            image.copy(
+                x = pivot.x + (image.x - pivot.x) * scale,
+                y = pivot.y + (image.y - pivot.y) * scale,
+                width = image.width * scale,
+                height = image.height * scale
+            )
+        }
+
         _uiState.update {
             it.copy(
-                selectedStrokes = updatedS,
-                selectedImages  = updatedI,
-                selectionBounds = calculateBounds(updatedS, updatedI)
+                selectedStrokes = updatedStrokes,
+                selectedImages = updatedImages,
+                selectionBounds = calculateBounds(updatedStrokes, updatedImages)
             )
         }
     }
 
     private fun calculateBounds(strokes: List<Stroke>, images: List<CanvasImage>): Rect? {
         if (strokes.isEmpty() && images.isEmpty()) return null
-        var minX = Float.MAX_VALUE;  var minY = Float.MAX_VALUE
-        var maxX = -Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
-        strokes.forEach { s ->
-            s.points.forEach { p ->
-                minX = min(minX, p.x); minY = min(minY, p.y)
-                maxX = max(maxX, p.x); maxY = max(maxY, p.y)
+
+        var minX = Float.MAX_VALUE
+        var minY = Float.MAX_VALUE
+        var maxX = -Float.MAX_VALUE
+        var maxY = -Float.MAX_VALUE
+
+        strokes.forEach { stroke ->
+            stroke.points.forEach { point ->
+                minX = min(minX, point.x)
+                minY = min(minY, point.y)
+                maxX = max(maxX, point.x)
+                maxY = max(maxY, point.y)
             }
         }
-        images.forEach { i ->
-            minX = min(minX, i.x);          minY = min(minY, i.y)
-            maxX = max(maxX, i.x + i.width); maxY = max(maxY, i.y + i.height)
+
+        images.forEach { image ->
+            minX = min(minX, image.x)
+            minY = min(minY, image.y)
+            maxX = max(maxX, image.x + image.width)
+            maxY = max(maxY, image.y + image.height)
         }
+
         return Rect(minX - 10f, minY - 10f, maxX + 10f, maxY + 10f)
     }
 
     fun copyLassoSelection() {
-        val s = _uiState.value
-        if (s.hasLassoSelection)
-            _uiState.update { it.copy(copiedStrokes = s.selectedStrokes, copiedImages = s.selectedImages) }
+        val state = _uiState.value
+        if (state.hasLassoSelection) {
+            _uiState.update {
+                it.copy(
+                    copiedStrokes = state.selectedStrokes,
+                    copiedImages = state.selectedImages
+                )
+            }
+        }
     }
 
     fun pasteSelection(pageId: Long) {
-        val s   = _uiState.value
-        if (s.copiedStrokes.isEmpty() && s.copiedImages.isEmpty()) return
-        val pages = s.pages.toMutableList()
-        val idx   = pages.indexOfFirst { it.page.id == pageId }
+        val state = _uiState.value
+        if (state.copiedStrokes.isEmpty() && state.copiedImages.isEmpty()) return
+
+        val pages = state.pages.toMutableList()
+        val idx = pages.indexOfFirst { it.page.id == pageId }
+
         if (idx != -1) {
             pushUndoSnapshot()
-            val newS = s.copiedStrokes.map {
-                it.copy(
-                    id     = UUID.randomUUID().toString(),
-                    points = it.points.map { p -> p.copy(x = p.x + 60f, y = p.y + 60f) }
+
+            val newStrokes = state.copiedStrokes.map { stroke ->
+                stroke.copy(
+                    id = UUID.randomUUID().toString(),
+                    points = stroke.points.map { point ->
+                        point.copy(x = point.x + 60f, y = point.y + 60f)
+                    }
                 )
             }
-            val newI = s.copiedImages.map {
-                it.copy(id = UUID.randomUUID().toString(), x = it.x + 60f, y = it.y + 60f)
+
+            val newImages = state.copiedImages.map { image ->
+                image.copy(
+                    id = UUID.randomUUID().toString(),
+                    x = image.x + 60f,
+                    y = image.y + 60f
+                )
             }
+
             val updatedPage = pages[idx].copy(
-                strokes = pages[idx].strokes + newS,
-                images  = pages[idx].images  + newI
+                strokes = pages[idx].strokes + newStrokes,
+                images = pages[idx].images + newImages
             )
+
             pages[idx] = updatedPage
+
             _uiState.update {
                 it.copy(
-                    pages             = pages,
+                    pages = pages,
                     hasLassoSelection = true,
-                    selectedStrokes   = newS,
-                    selectedImages    = newI,
-                    selectionPageId   = pageId,
-                    hiddenStrokeIds   = newS.map { st -> st.id }.toSet(),
-                    selectionBounds   = calculateBounds(newS, newI),
-                    lassoPath         = emptyList()
+                    selectedStrokes = newStrokes,
+                    selectedImages = newImages,
+                    selectionPageId = pageId,
+                    hiddenStrokeIds = newStrokes.map { stroke -> stroke.id }.toSet(),
+                    selectionBounds = calculateBounds(newStrokes, newImages),
+                    lassoPath = emptyList()
                 )
             }
+
             savePageToDb(updatedPage)
         }
     }
 
     fun releaseLassoSelection() {
-        val s      = _uiState.value
-        val pageId = s.selectionPageId ?: run {
+        val state = _uiState.value
+        val pageId = state.selectionPageId
+
+        if (pageId == null) {
             _uiState.update {
                 it.copy(
-                    hasLassoSelection = false, lassoPath = emptyList(),
-                    selectedStrokes   = emptyList(), selectedImages = emptyList(),
-                    selectionPageId   = null, hiddenStrokeIds = emptySet(), selectionBounds = null
+                    hasLassoSelection = false,
+                    lassoPath = emptyList(),
+                    selectedStrokes = emptyList(),
+                    selectedImages = emptyList(),
+                    selectionPageId = null,
+                    hiddenStrokeIds = emptySet(),
+                    selectionBounds = null
                 )
             }
             return
         }
-        val pages = s.pages.toMutableList()
-        val idx   = pages.indexOfFirst { it.page.id == pageId }
+
+        val pages = state.pages.toMutableList()
+        val idx = pages.indexOfFirst { it.page.id == pageId }
+
         if (idx != -1) {
-            val finalStrokes = pages[idx].strokes
-                .filterNot { old -> s.selectedStrokes.any { it.id == old.id } } + s.selectedStrokes
-            val finalImages  = pages[idx].images
-                .filterNot { old -> s.selectedImages.any  { it.id == old.id } } + s.selectedImages
-            pages[idx] = pages[idx].copy(strokes = finalStrokes, images = finalImages)
+            val finalStrokes = pages[idx].strokes.filterNot { old ->
+                state.selectedStrokes.any { it.id == old.id }
+            } + state.selectedStrokes
+
+            val finalImages = pages[idx].images.filterNot { old ->
+                state.selectedImages.any { it.id == old.id }
+            } + state.selectedImages
+
+            pages[idx] = pages[idx].copy(
+                strokes = finalStrokes,
+                images = finalImages
+            )
+
             _uiState.update {
                 it.copy(
-                    pages             = pages,
-                    hasLassoSelection = false, lassoPath       = emptyList(),
-                    selectedStrokes   = emptyList(), selectedImages = emptyList(),
-                    selectionPageId   = null, hiddenStrokeIds = emptySet(), selectionBounds = null
+                    pages = pages,
+                    hasLassoSelection = false,
+                    lassoPath = emptyList(),
+                    selectedStrokes = emptyList(),
+                    selectedImages = emptyList(),
+                    selectionPageId = null,
+                    hiddenStrokeIds = emptySet(),
+                    selectionBounds = null
                 )
             }
+
             savePageToDb(pages[idx])
         }
     }
 
-    private fun isPointInPolygon(p: Offset, poly: List<Offset>): Boolean {
-        if (poly.size < 3) return false
-        var res = false; var j = poly.size - 1
-        for (i in poly.indices) {
-            if ((poly[i].y > p.y) != (poly[j].y > p.y) &&
-                p.x < (poly[j].x - poly[i].x) * (p.y - poly[i].y) /
-                (poly[j].y - poly[i].y + 0.001f) + poly[i].x
-            ) res = !res
+    private fun isPointInPolygon(point: Offset, polygon: List<Offset>): Boolean {
+        if (polygon.size < 3) return false
+
+        var result = false
+        var j = polygon.size - 1
+
+        for (i in polygon.indices) {
+            if ((polygon[i].y > point.y) != (polygon[j].y > point.y) &&
+                point.x < (polygon[j].x - polygon[i].x) * (point.y - polygon[i].y) /
+                (polygon[j].y - polygon[i].y + 0.001f) + polygon[i].x
+            ) {
+                result = !result
+            }
             j = i
         }
-        return res
+
+        return result
     }
 
     private fun startNewStroke(x: Float, y: Float, pressure: Float, tool: CanvasTool) {
-        val s     = _uiState.value
+        val state = _uiState.value
+
         val color = when (tool) {
-            CanvasTool.HIGHLIGHTER -> s.highlighterColor
-            CanvasTool.SHAPE       -> s.shapeColor
-            else                   -> s.penColor
+            CanvasTool.HIGHLIGHTER -> state.highlighterColor
+            CanvasTool.SHAPE -> state.shapeColor
+            else -> state.penColor
         }
+
         val width = when (tool) {
-            CanvasTool.HIGHLIGHTER -> s.highlighterWidth
-            CanvasTool.SHAPE       -> s.shapeWidth
-            else                   -> s.penWidth
+            CanvasTool.HIGHLIGHTER -> state.highlighterWidth
+            CanvasTool.SHAPE -> state.shapeWidth
+            else -> state.penWidth
         }
+
         _uiState.update {
             it.copy(
                 currentStroke = Stroke(
-                    id           = UUID.randomUUID().toString(),
-                    points       = listOf(StrokePoint(x, y, pressure)),
-                    color        = color,
-                    strokeWidth  = width,
+                    id = UUID.randomUUID().toString(),
+                    points = listOf(StrokePoint(x, y, pressure)),
+                    color = color,
+                    strokeWidth = width,
                     isHighlighter = tool == CanvasTool.HIGHLIGHTER,
-                    shapeType    = if (tool == CanvasTool.SHAPE) s.activeShape else ShapeType.FREEHAND,
-                    penType      = s.activePenType,
-                    markerShape  = s.activeMarkerShape
+                    shapeType = if (tool == CanvasTool.SHAPE) state.activeShape else ShapeType.FREEHAND,
+                    penType = state.activePenType,
+                    markerShape = state.activeMarkerShape
                 )
             )
         }
     }
 
     private fun updateCurrentStroke(x: Float, y: Float, pressure: Float) {
-        _uiState.value.currentStroke?.let { s ->
-            _uiState.update {
-                it.copy(currentStroke = s.copy(points = s.points + StrokePoint(x, y, pressure)))
-            }
+        val current = _uiState.value.currentStroke ?: return
+        _uiState.update {
+            it.copy(
+                currentStroke = current.copy(
+                    points = current.points + StrokePoint(x, y, pressure)
+                )
+            )
         }
     }
 
     private fun finishStroke(pageId: Long) {
-        _uiState.value.currentStroke?.let { s ->
-            val pages = _uiState.value.pages.toMutableList()
-            val idx   = pages.indexOfFirst { it.page.id == pageId }
-            if (idx != -1) {
-                pushUndoSnapshot()
-                val updated = pages[idx].copy(strokes = pages[idx].strokes + s)
-                pages[idx]  = updated
-                _uiState.update { it.copy(pages = pages, currentStroke = null) }
-                savePageToDb(updated)
+        val stroke = _uiState.value.currentStroke ?: return
+        val pages = _uiState.value.pages.toMutableList()
+        val idx = pages.indexOfFirst { it.page.id == pageId }
+
+        if (idx != -1 && stroke.points.isNotEmpty()) {
+            pushUndoSnapshot()
+            val updatedPage = pages[idx].copy(strokes = pages[idx].strokes + stroke)
+            pages[idx] = updatedPage
+            _uiState.update {
+                it.copy(
+                    pages = pages,
+                    currentStroke = null
+                )
             }
+            savePageToDb(updatedPage)
         }
     }
 
     fun addImage(uri: String, targetPageId: Long? = null) {
-        val pages  = _uiState.value.pages.toMutableList()
+        val pages = _uiState.value.pages.toMutableList()
         val pageId = targetPageId ?: pages.firstOrNull()?.page?.id ?: return
-        val idx    = pages.indexOfFirst { it.page.id == pageId }
+        val idx = pages.indexOfFirst { it.page.id == pageId }
+
         if (idx != -1) {
             pushUndoSnapshot()
-            val newImg = CanvasImage(UUID.randomUUID().toString(), uri, 150f, 150f, 400f, 400f)
-            pages[idx] = pages[idx].copy(images = pages[idx].images + newImg)
+            val newImage = CanvasImage(
+                id = UUID.randomUUID().toString(),
+                uri = uri,
+                x = 150f,
+                y = 150f,
+                width = 400f,
+                height = 400f
+            )
+            pages[idx] = pages[idx].copy(images = pages[idx].images + newImage)
             _uiState.update { it.copy(pages = pages) }
             savePageToDb(pages[idx])
         }
     }
 
-    fun updateImageBounds(pId: Long, iId: String, nx: Float, ny: Float, nw: Float, nh: Float) {
+    fun updateImageBounds(
+        pageId: Long,
+        imageId: String,
+        newX: Float,
+        newY: Float,
+        newWidth: Float,
+        newHeight: Float
+    ) {
         val pages = _uiState.value.pages.toMutableList()
-        val idx   = pages.indexOfFirst { it.page.id == pId }
+        val idx = pages.indexOfFirst { it.page.id == pageId }
+
         if (idx != -1) {
             pages[idx] = pages[idx].copy(
-                images = pages[idx].images.map {
-                    if (it.id == iId) it.copy(x = nx, y = ny, width = nw, height = nh) else it
+                images = pages[idx].images.map { image ->
+                    if (image.id == imageId) {
+                        image.copy(
+                            x = newX,
+                            y = newY,
+                            width = newWidth,
+                            height = newHeight
+                        )
+                    } else {
+                        image
+                    }
                 }
             )
             _uiState.update { it.copy(pages = pages) }
@@ -545,125 +731,197 @@ class CanvasViewModel @Inject constructor(
     }
 
     fun deleteLassoSelection() {
-        val s      = _uiState.value
-        val pageId = s.selectionPageId ?: return
-        val pages  = s.pages.toMutableList()
-        val idx    = pages.indexOfFirst { it.page.id == pageId }
+        val state = _uiState.value
+        val pageId = state.selectionPageId ?: return
+        val pages = state.pages.toMutableList()
+        val idx = pages.indexOfFirst { it.page.id == pageId }
+
         if (idx != -1) {
             pushUndoSnapshot()
-            val updated = pages[idx].copy(
-                strokes = pages[idx].strokes.filterNot { old -> s.selectedStrokes.any { it.id == old.id } },
-                images  = pages[idx].images.filterNot  { old -> s.selectedImages.any  { it.id == old.id } }
+
+            val updatedPage = pages[idx].copy(
+                strokes = pages[idx].strokes.filterNot { old ->
+                    state.selectedStrokes.any { it.id == old.id }
+                },
+                images = pages[idx].images.filterNot { old ->
+                    state.selectedImages.any { it.id == old.id }
+                }
             )
-            pages[idx] = updated
+
+            pages[idx] = updatedPage
+
             _uiState.update {
                 it.copy(
-                    pages             = pages,
-                    hasLassoSelection = false, lassoPath       = emptyList(),
-                    selectedStrokes   = emptyList(), selectedImages = emptyList(),
-                    selectionPageId   = null, hiddenStrokeIds = emptySet(), selectionBounds = null
+                    pages = pages,
+                    hasLassoSelection = false,
+                    lassoPath = emptyList(),
+                    selectedStrokes = emptyList(),
+                    selectedImages = emptyList(),
+                    selectionPageId = null,
+                    hiddenStrokeIds = emptySet(),
+                    selectionBounds = null
                 )
             }
-            savePageToDb(updated)
+
+            savePageToDb(updatedPage)
         }
     }
 
     fun exportToPdf(context: Context, uri: Uri, onComplete: () -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             val pdfDocument = PdfDocument()
-            val pages       = _uiState.value.pages
-            pages.forEachIndexed { i, model ->
-                val info   = PdfDocument.PageInfo.Builder(595, 842, i + 1).create()
-                val page   = pdfDocument.startPage(info)
-                val canvas = page.canvas
+            val pages = _uiState.value.pages
+
+            pages.forEachIndexed { index, model ->
+                val pageInfo = PdfDocument.PageInfo.Builder(595, 842, index + 1).create()
+                val pdfPage = pdfDocument.startPage(pageInfo)
+                val canvas = pdfPage.canvas
+
                 canvas.drawColor(android.graphics.Color.WHITE)
+
                 val paint = Paint().apply {
-                    isAntiAlias  = true
-                    style        = Paint.Style.STROKE
-                    strokeJoin   = Paint.Join.ROUND
-                    strokeCap    = Paint.Cap.ROUND
+                    isAntiAlias = true
+                    style = Paint.Style.STROKE
+                    strokeJoin = Paint.Join.ROUND
+                    strokeCap = Paint.Cap.ROUND
                 }
-                model.strokes.forEach { s ->
-                    paint.color       = s.color
-                    paint.strokeWidth = s.strokeWidth * 0.5f
-                    paint.alpha       = if (s.isHighlighter) 120 else 255
+
+                model.strokes.forEach { stroke ->
+                    paint.color = stroke.color
+                    paint.strokeWidth = stroke.strokeWidth * 0.5f
+                    paint.alpha = if (stroke.isHighlighter) 120 else 255
+
                     val path = android.graphics.Path()
-                    if (s.points.isNotEmpty()) {
-                        path.moveTo(s.points[0].x * 0.5f, s.points[0].y * 0.5f)
-                        s.points.forEach { pt -> path.lineTo(pt.x * 0.5f, pt.y * 0.5f) }
+                    if (stroke.points.isNotEmpty()) {
+                        path.moveTo(stroke.points[0].x * 0.5f, stroke.points[0].y * 0.5f)
+                        stroke.points.forEach { point ->
+                            path.lineTo(point.x * 0.5f, point.y * 0.5f)
+                        }
                     }
                     canvas.drawPath(path, paint)
                 }
-                pdfDocument.finishPage(page)
+
+                pdfDocument.finishPage(pdfPage)
             }
+
             try {
                 context.contentResolver.openFileDescriptor(uri, "w")?.use { fd ->
-                    FileOutputStream(fd.fileDescriptor).use { out -> pdfDocument.writeTo(out) }
+                    FileOutputStream(fd.fileDescriptor).use { output ->
+                        pdfDocument.writeTo(output)
+                    }
                 }
-            } catch (e: Exception) { e.printStackTrace() }
-            finally {
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
                 pdfDocument.close()
-                withContext(Dispatchers.Main) { onComplete() }
+                withContext(Dispatchers.Main) {
+                    onComplete()
+                }
             }
         }
     }
 
-    // ── Setters ───────────────────────────────────────────────────────
     fun setActiveTool(tool: CanvasTool) {
-        releaseLassoSelection(); _uiState.update { it.copy(activeTool = tool) }
+        releaseLassoSelection()
+        _uiState.update {
+            it.copy(
+                activeTool = tool,
+                currentStroke = null,
+                drawingPageId = null,
+                isDrawing = false
+            )
+        }
     }
+
     fun setShapeMode(shape: ShapeType) {
-        releaseLassoSelection(); _uiState.update { it.copy(activeShape = shape, activeTool = CanvasTool.SHAPE) }
+        releaseLassoSelection()
+        _uiState.update {
+            it.copy(
+                activeShape = shape,
+                activeTool = CanvasTool.SHAPE,
+                currentStroke = null,
+                drawingPageId = null,
+                isDrawing = false
+            )
+        }
     }
+
     fun setPenType(type: PenType) {
-        releaseLassoSelection(); _uiState.update { it.copy(activePenType = type) }
+        releaseLassoSelection()
+        _uiState.update { it.copy(activePenType = type) }
     }
+
     fun setMarkerShape(shape: MarkerShape) {
-        releaseLassoSelection(); _uiState.update { it.copy(activeMarkerShape = shape) }
+        releaseLassoSelection()
+        _uiState.update { it.copy(activeMarkerShape = shape) }
     }
+
     fun updateToolSettings(color: Int, width: Float, tool: CanvasTool) {
-        _uiState.update { s ->
+        _uiState.update { state ->
             when (tool) {
-                CanvasTool.HIGHLIGHTER -> s.copy(highlighterColor = color, highlighterWidth = width)
-                CanvasTool.SHAPE       -> s.copy(shapeColor = color, shapeWidth = width)
-                else                   -> s.copy(penColor = color, penWidth = width)
+                CanvasTool.HIGHLIGHTER -> state.copy(
+                    highlighterColor = color,
+                    highlighterWidth = width
+                )
+                CanvasTool.SHAPE -> state.copy(
+                    shapeColor = color,
+                    shapeWidth = width
+                )
+                else -> state.copy(
+                    penColor = color,
+                    penWidth = width
+                )
             }
         }
     }
-    fun updatePageBackground(pageId: Long, bg: PageBackground) {
+
+    fun updatePageBackground(pageId: Long, background: PageBackground) {
         viewModelScope.launch {
-            repository.getPages(notebookId).find { it.id == pageId }?.let {
-                repository.updatePage(it.copy(backgroundType = bg.name))
-            }
+            repository.getPages(notebookId)
+                .find { it.id == pageId }
+                ?.let { page ->
+                    repository.updatePage(page.copy(backgroundType = background.name))
+                }
+
             refreshPagesFromDb()
         }
     }
+
     fun addNewPage() {
         viewModelScope.launch {
-            val pages  = repository.getPages(notebookId)
-            val lastBg = pages.lastOrNull()?.backgroundType ?: "PLAIN"
+            val pages = repository.getPages(notebookId)
+            val lastBackground = pages.lastOrNull()?.backgroundType ?: "PLAIN"
+
             repository.insertPage(
-                PageEntity(notebookId = notebookId, pageNumber = pages.size + 1, backgroundType = lastBg)
+                PageEntity(
+                    notebookId = notebookId,
+                    pageNumber = pages.size + 1,
+                    backgroundType = lastBackground
+                )
             )
             refreshPagesFromDb()
         }
     }
+
     private fun savePageToDb(pageModel: PageUiModel) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.updatePage(
                 pageModel.page.copy(
                     strokeDataJson = gson.toJson(pageModel.strokes),
-                    imageDataJson  = gson.toJson(pageModel.images)
+                    imageDataJson = gson.toJson(pageModel.images)
                 )
             )
         }
     }
+
     private fun toggleToolFromButton() {
         releaseLassoSelection()
         _uiState.update {
             it.copy(
-                activeTool    = if (it.activeTool == CanvasTool.ERASER) CanvasTool.PEN else CanvasTool.ERASER,
-                currentStroke = null
+                activeTool = if (it.activeTool == CanvasTool.ERASER) CanvasTool.PEN else CanvasTool.ERASER,
+                currentStroke = null,
+                drawingPageId = null,
+                isDrawing = false
             )
         }
     }

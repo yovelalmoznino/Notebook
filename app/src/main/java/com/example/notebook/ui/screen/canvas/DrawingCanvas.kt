@@ -1,27 +1,247 @@
 package com.example.notebook.ui.screen.canvas
 
+import android.content.Context
+import android.os.Build
+import android.view.MotionEvent
+import android.view.View
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStyle
-import androidx.compose.ui.input.pointer.*
-import com.example.notebook.data.model.*
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import com.example.notebook.data.model.CanvasTool
+import com.example.notebook.data.model.MarkerShape
+import com.example.notebook.data.model.PenType
+import com.example.notebook.data.model.ShapeType
 import com.example.notebook.data.model.Stroke as CanvasStroke
-import kotlin.math.*
+import com.example.notebook.data.model.StrokePoint
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.sin
 
-@OptIn(ExperimentalComposeUiApi::class)
+private const val META_STYLUS_LEGACY = 0x200
+private const val META_ERASER_LEGACY = 0x400
+
+private class StylusInputView(
+    context: Context
+) : View(context) {
+
+    var activeTool: CanvasTool = CanvasTool.PEN
+    var onDrawAction: ((action: Int, x: Float, y: Float, pressure: Float, isEraser: Boolean) -> Unit)? = null
+
+    private var activePointerId: Int = MotionEvent.INVALID_POINTER_ID
+    private var strokeInProgress = false
+    private var currentIsEraser = false
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        val action = event.actionMasked
+        val actionIndex = event.actionIndex
+
+        fun toolTypeAt(index: Int): Int {
+            return if (index in 0 until event.pointerCount) event.getToolType(index)
+            else MotionEvent.TOOL_TYPE_UNKNOWN
+        }
+
+        fun isFinger(index: Int): Boolean {
+            return toolTypeAt(index) == MotionEvent.TOOL_TYPE_FINGER
+        }
+
+        fun detectEraser(index: Int): Boolean {
+            val toolType = toolTypeAt(index)
+            if (toolType == MotionEvent.TOOL_TYPE_ERASER) return true
+            return (event.metaState and META_ERASER_LEGACY) == META_ERASER_LEGACY
+        }
+
+        fun detectStylus(index: Int): Boolean {
+            val toolType = toolTypeAt(index)
+            if (toolType == MotionEvent.TOOL_TYPE_STYLUS) return true
+            if ((event.metaState and META_STYLUS_LEGACY) == META_STYLUS_LEGACY) return true
+
+            if (toolType == MotionEvent.TOOL_TYPE_UNKNOWN && !isFinger(index)) return true
+            return false
+        }
+
+        fun isStylusLike(index: Int): Boolean {
+            return detectStylus(index) || detectEraser(index)
+        }
+
+        fun requestFastDispatch() {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                requestUnbufferedDispatch(event)
+            }
+        }
+
+        when (action) {
+            MotionEvent.ACTION_DOWN -> {
+                if (isFinger(0)) {
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                    strokeInProgress = false
+                    activePointerId = MotionEvent.INVALID_POINTER_ID
+                    return false
+                }
+
+                if (!isStylusLike(0)) return false
+
+                parent?.requestDisallowInterceptTouchEvent(true)
+                requestFastDispatch()
+
+                activePointerId = event.getPointerId(0)
+                currentIsEraser = detectEraser(0)
+                strokeInProgress = true
+
+                onDrawAction?.invoke(
+                    0,
+                    event.getX(0),
+                    event.getY(0),
+                    event.getPressure(0).coerceAtLeast(0.01f),
+                    currentIsEraser
+                )
+                return true
+            }
+
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                if (strokeInProgress) return true
+                if (isFinger(actionIndex)) return false
+                if (!isStylusLike(actionIndex)) return false
+
+                parent?.requestDisallowInterceptTouchEvent(true)
+                requestFastDispatch()
+
+                activePointerId = event.getPointerId(actionIndex)
+                currentIsEraser = detectEraser(actionIndex)
+                strokeInProgress = true
+
+                onDrawAction?.invoke(
+                    0,
+                    event.getX(actionIndex),
+                    event.getY(actionIndex),
+                    event.getPressure(actionIndex).coerceAtLeast(0.01f),
+                    currentIsEraser
+                )
+                return true
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                if (!strokeInProgress) return false
+
+                val pointerIndex = event.findPointerIndex(activePointerId)
+                if (pointerIndex == -1) {
+                    strokeInProgress = false
+                    currentIsEraser = false
+                    activePointerId = MotionEvent.INVALID_POINTER_ID
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                    return false
+                }
+
+                if (isFinger(pointerIndex)) {
+                    strokeInProgress = false
+                    currentIsEraser = false
+                    activePointerId = MotionEvent.INVALID_POINTER_ID
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                    return false
+                }
+
+                currentIsEraser = detectEraser(pointerIndex)
+
+                for (i in 0 until event.historySize) {
+                    onDrawAction?.invoke(
+                        2,
+                        event.getHistoricalX(pointerIndex, i),
+                        event.getHistoricalY(pointerIndex, i),
+                        event.getHistoricalPressure(pointerIndex, i).coerceAtLeast(0.01f),
+                        currentIsEraser
+                    )
+                }
+
+                onDrawAction?.invoke(
+                    2,
+                    event.getX(pointerIndex),
+                    event.getY(pointerIndex),
+                    event.getPressure(pointerIndex).coerceAtLeast(0.01f),
+                    currentIsEraser
+                )
+                return true
+            }
+
+            MotionEvent.ACTION_UP -> {
+                if (!strokeInProgress) return false
+
+                onDrawAction?.invoke(
+                    1,
+                    event.getX(0),
+                    event.getY(0),
+                    event.getPressure(0).coerceAtLeast(0.01f),
+                    currentIsEraser
+                )
+
+                strokeInProgress = false
+                currentIsEraser = false
+                activePointerId = MotionEvent.INVALID_POINTER_ID
+                parent?.requestDisallowInterceptTouchEvent(false)
+                return true
+            }
+
+            MotionEvent.ACTION_POINTER_UP -> {
+                val pointerId = event.getPointerId(actionIndex)
+                if (pointerId == activePointerId && strokeInProgress) {
+                    onDrawAction?.invoke(
+                        1,
+                        event.getX(actionIndex),
+                        event.getY(actionIndex),
+                        event.getPressure(actionIndex).coerceAtLeast(0.01f),
+                        currentIsEraser
+                    )
+
+                    strokeInProgress = false
+                    currentIsEraser = false
+                    activePointerId = MotionEvent.INVALID_POINTER_ID
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                    return true
+                }
+                return false
+            }
+
+            MotionEvent.ACTION_CANCEL -> {
+                if (strokeInProgress) {
+                    val pointerIndex = event.findPointerIndex(activePointerId).takeIf { it != -1 } ?: 0
+                    onDrawAction?.invoke(
+                        1,
+                        event.getX(pointerIndex),
+                        event.getY(pointerIndex),
+                        0f,
+                        currentIsEraser
+                    )
+                }
+
+                strokeInProgress = false
+                currentIsEraser = false
+                activePointerId = MotionEvent.INVALID_POINTER_ID
+                parent?.requestDisallowInterceptTouchEvent(false)
+                return true
+            }
+        }
+
+        return false
+    }
+}
+
 @Composable
 fun DrawingCanvas(
     activeTool: CanvasTool,
@@ -33,67 +253,10 @@ fun DrawingCanvas(
     selectionBounds: Rect?,
     onDrawAction: (action: Int, x: Float, y: Float, pressure: Float, isEraser: Boolean) -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            // פקודת הברזל: מונעת מאנדרואיד "לגנוב" מגע בשוליים ומשחררת את כל המסך לעט
-            .systemGestureExclusion()
-            .pointerInput(activeTool) {
-                awaitEachGesture {
-                    val downEvent = awaitFirstDown(requireUnconsumed = false)
-                    var isDrawing = false
-                    var activePointerId: PointerId? = null
+    val context = LocalContext.current
+    val currentOnDrawAction = rememberUpdatedState(onDrawAction)
 
-                    do {
-                        // שימוש ב-Initial תופס את המגע ישירות מהחומרה לפני ששום רכיב אחר באנדרואיד חושב עליו
-                        val event = awaitPointerEvent(PointerEventPass.Initial)
-                        val changes = event.changes
-
-                        val allowFingerDraw = activeTool == CanvasTool.LASSO
-
-                        // זיהוי עט (או תמיכה במצב בו זווית חדה מזוהה כ-Unknown)
-                        val stylusChange = changes.firstOrNull {
-                            it.type == PointerType.Stylus ||
-                                    it.type == PointerType.Eraser ||
-                                    it.type == PointerType.Unknown
-                        }
-
-                        val targetChange = stylusChange ?:
-                        changes.firstOrNull { it.id == activePointerId } ?:
-                        if (allowFingerDraw) changes.firstOrNull { it.pressed } else null
-
-                        if (targetChange != null && (stylusChange != null || allowFingerDraw || isDrawing)) {
-
-                            val isEraser = targetChange.type == PointerType.Eraser
-
-                            // תיקון קריטי לזווית של הלנובו: אם החיישן מדווח 0 לחץ, נכפה עליו לפחות 0.15
-                            // כדי שהקו בחיים לא יהפוך לבלתי נראה!
-                            val safePressure = targetChange.pressure.coerceAtLeast(0.15f)
-
-                            if (!isDrawing) {
-                                isDrawing = true
-                                activePointerId = targetChange.id
-                                onDrawAction(0, targetChange.position.x, targetChange.position.y, safePressure, isEraser)
-                            }
-
-                            // בולעים את *כל* המגעים במסך כדי למנוע קפיצות מכף היד
-                            changes.forEach { if (it.pressed || it.previousPressed) it.consume() }
-
-                            // משתמשים ב-safePressure גם עבור נקודות ההיסטוריה כי אין להן מאפיין pressure משלהן
-                            targetChange.historical.forEach { hist ->
-                                onDrawAction(2, hist.position.x, hist.position.y, safePressure, isEraser)
-                            }
-                            onDrawAction(2, targetChange.position.x, targetChange.position.y, safePressure, isEraser)
-
-                        }
-                    } while (event.changes.any { it.pressed })
-
-                    if (isDrawing) {
-                        onDrawAction(1, 0f, 0f, 0f, false)
-                    }
-                }
-            }
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             strokes.forEach { drawComplexStroke(it, Offset.Zero) }
             selectedStrokes.forEach { drawComplexStroke(it, dragOffset) }
@@ -104,133 +267,219 @@ fun DrawingCanvas(
                     moveTo(lassoPath[0].x, lassoPath[0].y)
                     lassoPath.forEach { lineTo(it.x, it.y) }
                 }
-                drawPath(path, Color(0xFF3b82f6).copy(alpha = 0.5f), style = DrawStyle(width = 2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 15f))))
+                drawPath(
+                    path = path,
+                    color = Color(0xFF3B82F6).copy(alpha = 0.5f),
+                    style = DrawStyle(
+                        width = 2f,
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 15f))
+                    )
+                )
             }
 
             selectionBounds?.let { b ->
-                drawRect(Color(0xFF3b82f6).copy(alpha = 0.15f), Offset(b.left, b.top), Size(b.width, b.height))
-                drawRect(Color(0xFF3b82f6), Offset(b.left, b.top), Size(b.width, b.height), style = DrawStyle(width = 2.5f))
-                drawCircle(Color.White, radius = 18f, center = Offset(b.right, b.bottom))
-                drawCircle(Color(0xFF3b82f6), radius = 18f, center = Offset(b.right, b.bottom), style = DrawStyle(width = 3f))
+                drawRect(
+                    color = Color(0xFF3B82F6).copy(alpha = 0.15f),
+                    topLeft = Offset(b.left, b.top),
+                    size = Size(b.width, b.height)
+                )
+                drawRect(
+                    color = Color(0xFF3B82F6),
+                    topLeft = Offset(b.left, b.top),
+                    size = Size(b.width, b.height),
+                    style = DrawStyle(width = 2.5f)
+                )
+                drawCircle(Color.White, 18f, Offset(b.right, b.bottom))
+                drawCircle(
+                    color = Color(0xFF3B82F6),
+                    radius = 18f,
+                    center = Offset(b.right, b.bottom),
+                    style = DrawStyle(width = 3f)
+                )
             }
         }
+
+        AndroidView(
+            factory = {
+                StylusInputView(context).apply {
+                    this.activeTool = activeTool
+                    this.onDrawAction = { action, x, y, pressure, isEraser ->
+                        currentOnDrawAction.value(action, x, y, pressure, isEraser)
+                    }
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                }
+            },
+            update = { view ->
+                view.activeTool = activeTool
+                view.onDrawAction = { action, x, y, pressure, isEraser ->
+                    currentOnDrawAction.value(action, x, y, pressure, isEraser)
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }
 
 fun DrawScope.drawComplexStroke(stroke: CanvasStroke, offset: Offset) {
     if (stroke.points.isEmpty()) return
+
     val color = Color(stroke.color).copy(alpha = if (stroke.isHighlighter) 0.5f else 1f)
 
     when (stroke.shapeType ?: ShapeType.FREEHAND) {
         ShapeType.FREEHAND -> {
             if (stroke.isHighlighter) {
                 val cap = if (stroke.markerShape == MarkerShape.SQUARE) StrokeCap.Square else StrokeCap.Round
-                if (stroke.points.size == 1) {
-                    drawCircle(color, stroke.strokeWidth / 2f, Offset(stroke.points[0].x + offset.x, stroke.points[0].y + offset.y))
-                } else {
-                    val path = Path().apply {
-                        moveTo(stroke.points[0].x + offset.x, stroke.points[0].y + offset.y)
-                        stroke.points.forEach { lineTo(it.x + offset.x, it.y + offset.y) }
-                    }
-                    drawPath(path, color, style = DrawStyle(stroke.strokeWidth, cap = cap, join = StrokeJoin.Bevel), blendMode = BlendMode.Multiply)
+                val path = Path().apply {
+                    moveTo(stroke.points[0].x + offset.x, stroke.points[0].y + offset.y)
+                    stroke.points.forEach { lineTo(it.x + offset.x, it.y + offset.y) }
                 }
+                drawPath(
+                    path = path,
+                    color = color,
+                    style = DrawStyle(
+                        width = stroke.strokeWidth,
+                        cap = cap,
+                        join = StrokeJoin.Bevel
+                    ),
+                    blendMode = BlendMode.Multiply
+                )
             } else {
                 when (stroke.penType) {
                     PenType.FOUNTAIN -> {
-                        if (stroke.points.size == 1) {
-                            // רצפת עובי מינימלית שלא יעלם
-                            val w = stroke.strokeWidth * (stroke.points[0].pressure * 2f).coerceIn(0.4f, 2.5f)
-                            drawCircle(color, w / 2f, Offset(stroke.points[0].x + offset.x, stroke.points[0].y + offset.y))
-                        } else if (stroke.points.size > 1) {
-                            var prevP = stroke.points[0]
-                            var prevW = stroke.strokeWidth * (prevP.pressure * 2f).coerceIn(0.4f, 2.5f)
-                            for (i in 1 until stroke.points.size) {
-                                val p = stroke.points[i]
-                                val currentW = stroke.strokeWidth * (p.pressure * 2f).coerceIn(0.4f, 2.5f)
-                                val smoothW = prevW + (currentW - prevW) * 0.2f
-                                drawLine(color, Offset(prevP.x + offset.x, prevP.y + offset.y), Offset(p.x + offset.x, p.y + offset.y), smoothW, StrokeCap.Round)
-                                prevP = p
-                                prevW = smoothW
-                            }
+                        for (i in 0 until stroke.points.size - 1) {
+                            val p1 = stroke.points[i]
+                            val p2 = stroke.points[i + 1]
+                            val width = stroke.strokeWidth * (p1.pressure * 2f).coerceIn(0.5f, 2.5f)
+                            drawLine(
+                                color = color,
+                                start = Offset(p1.x + offset.x, p1.y + offset.y),
+                                end = Offset(p2.x + offset.x, p2.y + offset.y),
+                                strokeWidth = width,
+                                cap = StrokeCap.Round
+                            )
                         }
                     }
+
                     PenType.CALLIGRAPHY -> {
-                        if (stroke.points.size == 1) {
-                            drawCircle(color, stroke.strokeWidth / 2f, Offset(stroke.points[0].x + offset.x, stroke.points[0].y + offset.y))
-                        } else if (stroke.points.size > 1) {
-                            val angle = PI / 4
-                            val xS = (cos(angle) * stroke.strokeWidth * 0.7).toFloat()
-                            val yS = (sin(angle) * stroke.strokeWidth * 0.7).toFloat()
-                            val path = Path()
-                            var prev = stroke.points[0]
-                            for (i in 1 until stroke.points.size) {
-                                val curr = stroke.points[i]
-                                path.moveTo(prev.x + offset.x - xS, prev.y + offset.y + yS)
-                                path.lineTo(prev.x + offset.x + xS, prev.y + offset.y - yS)
-                                path.lineTo(curr.x + offset.x + xS, curr.y + offset.y - yS)
-                                path.lineTo(curr.x + offset.x - xS, curr.y + offset.y + yS)
-                                path.close()
-                                prev = curr
-                            }
-                            drawPath(path, color, style = Fill)
+                        val angle = PI / 4
+                        stroke.points.forEach { pt ->
+                            val xShift = cos(angle).toFloat() * stroke.strokeWidth
+                            val yShift = sin(angle).toFloat() * stroke.strokeWidth
+                            drawLine(
+                                color = color,
+                                start = Offset(pt.x + offset.x - xShift, pt.y + offset.y - yShift),
+                                end = Offset(pt.x + offset.x + xShift, pt.y + offset.y + yShift),
+                                strokeWidth = 2f
+                            )
                         }
                     }
+
                     else -> {
-                        if (stroke.points.size == 1) {
-                            drawCircle(color, stroke.strokeWidth / 2f, Offset(stroke.points[0].x + offset.x, stroke.points[0].y + offset.y))
-                        } else if (stroke.points.size > 1) {
-                            val path = Path()
-                            var prevX = stroke.points[0].x + offset.x
-                            var prevY = stroke.points[0].y + offset.y
-                            path.moveTo(prevX, prevY)
-
-                            for (i in 1 until stroke.points.size) {
-                                val curX = stroke.points[i].x + offset.x
-                                val curY = stroke.points[i].y + offset.y
-                                val midX = (prevX + curX) / 2f
-                                val midY = (prevY + curY) / 2f
-
-                                if (i == 1) {
-                                    path.lineTo(midX, midY)
-                                } else {
-                                    path.quadraticBezierTo(prevX, prevY, midX, midY)
-                                }
-                                prevX = curX
-                                prevY = curY
-                            }
-                            path.lineTo(prevX, prevY)
-                            drawPath(path, color, style = DrawStyle(stroke.strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                        val path = Path().apply {
+                            moveTo(stroke.points[0].x + offset.x, stroke.points[0].y + offset.y)
+                            stroke.points.forEach { lineTo(it.x + offset.x, it.y + offset.y) }
                         }
+                        drawPath(
+                            path = path,
+                            color = color,
+                            style = DrawStyle(
+                                width = stroke.strokeWidth,
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round
+                            )
+                        )
                     }
                 }
             }
         }
+
         else -> drawShape(stroke, color, offset)
     }
 }
 
 private fun DrawScope.drawShape(stroke: CanvasStroke, color: Color, offset: Offset) {
     if (stroke.points.size < 2) return
-    val p1 = stroke.points.first(); val p2 = stroke.points.last()
-    val start = Offset(p1.x + offset.x, p1.y + offset.y); val end = Offset(p2.x + offset.x, p2.y + offset.y)
+
+    val p1 = stroke.points.first()
+    val p2 = stroke.points.last()
+
+    val start = Offset(p1.x + offset.x, p1.y + offset.y)
+    val end = Offset(p2.x + offset.x, p2.y + offset.y)
+
     val style = DrawStyle(stroke.strokeWidth, join = StrokeJoin.Round)
-    val left = min(start.x, end.x); val top = min(start.y, end.y); val w = abs(end.x - start.x).coerceAtLeast(1f); val h = abs(end.y - start.y).coerceAtLeast(1f)
+    val left = min(start.x, end.x)
+    val top = min(start.y, end.y)
+    val width = abs(end.x - start.x).coerceAtLeast(1f)
+    val height = abs(end.y - start.y).coerceAtLeast(1f)
+
     when (stroke.shapeType) {
         ShapeType.LINE -> drawLine(color, start, end, stroke.strokeWidth, StrokeCap.Round)
-        ShapeType.RECTANGLE -> drawRect(color, Offset(left, top), Size(w, h), style = style)
-        ShapeType.CIRCLE -> drawOval(color, Offset(left, top), Size(w, h), style = style)
-        ShapeType.TRIANGLE -> { val path = Path().apply { moveTo(left + w / 2, top); lineTo(left, top + h); lineTo(left + w, top + h); close() }; drawPath(path, color, style = style) }
+
+        ShapeType.RECTANGLE -> drawRect(
+            color = color,
+            topLeft = Offset(left, top),
+            size = Size(width, height),
+            style = style
+        )
+
+        ShapeType.CIRCLE -> drawOval(
+            color = color,
+            topLeft = Offset(left, top),
+            size = Size(width, height),
+            style = style
+        )
+
+        ShapeType.TRIANGLE -> {
+            val path = Path().apply {
+                moveTo(left + width / 2, top)
+                lineTo(left, top + height)
+                lineTo(left + width, top + height)
+                close()
+            }
+            drawPath(path, color, style = style)
+        }
+
         ShapeType.ARROW -> {
-            val a = atan2(end.y - start.y, end.x - start.x)
+            val angle = atan2(end.y - start.y, end.x - start.x)
             drawLine(color, start, end, stroke.strokeWidth, StrokeCap.Round)
-            drawLine(color, end, Offset(end.x - 30f * cos(a - 0.5f).toFloat(), end.y - 30f * sin(a - 0.5f).toFloat()), stroke.strokeWidth)
-            drawLine(color, end, Offset(end.x - 30f * cos(a + 0.5f).toFloat(), end.y - 30f * sin(a + 0.5f).toFloat()), stroke.strokeWidth)
+            drawLine(
+                color,
+                end,
+                Offset(
+                    end.x - 30f * cos(angle - 0.5f).toFloat(),
+                    end.y - 30f * sin(angle - 0.5f).toFloat()
+                ),
+                stroke.strokeWidth
+            )
+            drawLine(
+                color,
+                end,
+                Offset(
+                    end.x - 30f * cos(angle + 0.5f).toFloat(),
+                    end.y - 30f * sin(angle + 0.5f).toFloat()
+                ),
+                stroke.strokeWidth
+            )
         }
+
         ShapeType.STAR -> {
-            val path = Path(); val cx = left + w/2; val cy = top + h/2; val outer = min(w, h)/2; val inner = outer/2.5f
-            for (i in 0 until 10) { val r = if (i % 2 == 0) outer else inner; val ang = i * PI/5 - PI/2; val px = cx + r * cos(ang).toFloat(); val py = cy + r * sin(ang).toFloat(); if (i == 0) path.moveTo(px, py) else path.lineTo(px, py) }
-            path.close(); drawPath(path, color, style = style)
+            val path = Path()
+            val cx = left + width / 2
+            val cy = top + height / 2
+            val outer = min(width, height) / 2
+            val inner = outer / 2.5f
+
+            for (i in 0 until 10) {
+                val r = if (i % 2 == 0) outer else inner
+                val ang = i * PI / 5 - PI / 2
+                val px = cx + r * cos(ang).toFloat()
+                val py = cy + r * sin(ang).toFloat()
+                if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
+            }
+            path.close()
+            drawPath(path, color, style = style)
         }
+
         else -> {}
     }
 }
