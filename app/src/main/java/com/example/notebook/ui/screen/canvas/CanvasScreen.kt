@@ -1,5 +1,7 @@
 package com.example.notebook.ui.screen.canvas
 
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -8,65 +10,116 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.Brush
+import androidx.compose.material.icons.rounded.ChevronLeft
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Gesture
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.PictureAsPdf
+import androidx.compose.material.icons.rounded.Redo
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Undo
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.example.notebook.data.model.*
+import com.example.notebook.data.model.CanvasImage
+import com.example.notebook.data.model.CanvasTool
+import com.example.notebook.data.model.MarkerShape
+import com.example.notebook.data.model.PageBackground
+import com.example.notebook.data.model.PageUiModel
+import com.example.notebook.data.model.PenType
+import com.example.notebook.data.model.ShapeType
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.example.notebook.data.model.Stroke as CanvasStroke
+import androidx.compose.ui.input.pointer.pointerInput
 
-val AuraPastelPalette = listOf(
-    Color(0xFF1A1A2E), Color(0xFF2D3436), Color(0xFF636E72),
-    Color(0xFFB2BEC3), Color(0xFFDFE6E9), Color(0xFFFFFFFF),
-    Color(0xFFFF7675), Color(0xFFE84393), Color(0xFFD63031),
-    Color(0xFFFFB8B8), Color(0xFFFFCCD5), Color(0xFFF8BBD9),
-    Color(0xFFE17055), Color(0xFFFDCB6E), Color(0xFFF9CA24),
-    Color(0xFFFFDDB8), Color(0xFFFFEAB8), Color(0xFFFFF3CD),
-    Color(0xFF00B894), Color(0xFF55EFC4), Color(0xFF00CEC9),
-    Color(0xFFB8F0E0), Color(0xFFC8F7C5), Color(0xFFD5F5E3),
-    Color(0xFF0984E3), Color(0xFF74B9FF), Color(0xFF6C5CE7),
-    Color(0xFFBDD5FB), Color(0xFFD6E4FF), Color(0xFFE8EAF6),
-    Color(0xFF8E44AD), Color(0xFFA29BFE), Color(0xFFE17055),
-    Color(0xFFE8DAEF), Color(0xFFEDE7F6), Color(0xFFFCE4EC)
+private val PenPalette = listOf(
+    Color(0xFF1A1A1A),
+    Color(0xFF2D3436),
+    Color(0xFF636E72),
+    Color(0xFFD63031),
+    Color(0xFFE17055),
+    Color(0xFFFDCB6E),
+    Color(0xFF00B894),
+    Color(0xFF00CEC9),
+    Color(0xFF0984E3),
+    Color(0xFF6C5CE7),
+    Color(0xFFA29BFE),
+    Color(0xFFE84393)
 )
 
-val AuraHighlighterPalette = listOf(
-    Color(0x66FDCB6E), Color(0x66FAB1A0), Color(0x66A8EDEA),
-    Color(0x6681ECEC), Color(0x6655EFC4), Color(0x66FD79A8),
-    Color(0x6674B9FF), Color(0x66B2FF59), Color(0x66FFCCBC),
-    Color(0x66CE93D8), Color(0x66FFE082), Color(0x66EF9A9A)
+private val HighlighterPalette = listOf(
+    Color(0x66FFF59D),
+    Color(0x66FFE082),
+    Color(0x66FFCCBC),
+    Color(0x66F8BBD0),
+    Color(0x66DCEDC8),
+    Color(0x66B2DFDB),
+    Color(0x66BBDEFB),
+    Color(0x66D1C4E9)
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -78,9 +131,11 @@ fun CanvasScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    var showSettingsForTool by remember { mutableStateOf<CanvasTool?>(null) }
+
+    var currentPageIndex by remember(uiState.pages.size) { mutableIntStateOf(0) }
     var selectedPageForTemplate by remember { mutableStateOf<Long?>(null) }
-    var currentPageIndex by remember(uiState.pages.size) { mutableStateOf(0) }
+    var showPenSettings by remember { mutableStateOf(false) }
+    var showHighlighterSettings by remember { mutableStateOf(false) }
 
     LaunchedEffect(uiState.pages.size) {
         if (uiState.pages.isNotEmpty()) {
@@ -95,7 +150,7 @@ fun CanvasScreen(
     ) { uri ->
         uri?.let {
             viewModel.exportToPdf(context, it) {
-                Toast.makeText(context, "✅ PDF ייוצא בהצלחה!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "PDF exported", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -103,200 +158,74 @@ fun CanvasScreen(
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri ->
-        uri?.let {
-            currentPage?.let { page ->
-                viewModel.addImage(it.toString(), page.page.id)
-            }
+        if (uri != null && currentPage != null) {
+            viewModel.addImage(uri.toString(), currentPage.page.id)
         }
     }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = Color(0xFFFAF8F5)
-                ),
-                title = {
-                    LazyRow(
-                        modifier = Modifier
-                            .background(Color.White.copy(alpha = 0.95f), RoundedCornerShape(32.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                            .shadow(2.dp, RoundedCornerShape(32.dp)),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        item {
-                            Box {
-                                ToolButton(Icons.Rounded.Edit, uiState.activeTool == CanvasTool.PEN) {
-                                    if (uiState.activeTool == CanvasTool.PEN) {
-                                        showSettingsForTool = CanvasTool.PEN
-                                    } else {
-                                        viewModel.setActiveTool(CanvasTool.PEN)
-                                        showSettingsForTool = null
-                                    }
-                                }
-                                if (showSettingsForTool == CanvasTool.PEN) {
-                                    ToolSettingsPopup(CanvasTool.PEN, uiState, { showSettingsForTool = null }, viewModel)
-                                }
-                            }
-                        }
-
-                        item {
-                            Box {
-                                ToolButton(Icons.Rounded.Brush, uiState.activeTool == CanvasTool.HIGHLIGHTER) {
-                                    if (uiState.activeTool == CanvasTool.HIGHLIGHTER) {
-                                        showSettingsForTool = CanvasTool.HIGHLIGHTER
-                                    } else {
-                                        viewModel.setActiveTool(CanvasTool.HIGHLIGHTER)
-                                        showSettingsForTool = null
-                                    }
-                                }
-                                if (showSettingsForTool == CanvasTool.HIGHLIGHTER) {
-                                    ToolSettingsPopup(CanvasTool.HIGHLIGHTER, uiState, { showSettingsForTool = null }, viewModel)
-                                }
-                            }
-                        }
-
-                        item {
-                            ToolButton(Icons.Rounded.AutoFixHigh, uiState.activeTool == CanvasTool.ERASER) {
-                                viewModel.setActiveTool(CanvasTool.ERASER)
-                                showSettingsForTool = null
-                            }
-                        }
-
-                        item {
-                            Box {
-                                val shapeIcon = when (uiState.activeShape) {
-                                    ShapeType.STAR -> Icons.Rounded.Star
-                                    ShapeType.TRIANGLE -> Icons.Rounded.ChangeHistory
-                                    ShapeType.RECTANGLE -> Icons.Rounded.Square
-                                    ShapeType.CIRCLE -> Icons.Rounded.Circle
-                                    ShapeType.ARROW -> Icons.Rounded.TrendingFlat
-                                    else -> Icons.Rounded.Category
-                                }
-
-                                ToolButton(shapeIcon, uiState.activeTool == CanvasTool.SHAPE) {
-                                    if (uiState.activeTool == CanvasTool.SHAPE) {
-                                        showSettingsForTool = CanvasTool.SHAPE
-                                    } else {
-                                        viewModel.setActiveTool(CanvasTool.SHAPE)
-                                        showSettingsForTool = null
-                                    }
-                                }
-
-                                if (showSettingsForTool == CanvasTool.SHAPE) {
-                                    ToolSettingsPopup(CanvasTool.SHAPE, uiState, { showSettingsForTool = null }, viewModel)
-                                }
-                            }
-                        }
-
-                        item {
-                            Spacer(
-                                Modifier.width(1.dp).height(24.dp).background(Color.LightGray)
-                            )
-                        }
-
-                        item {
-                            ToolButton(Icons.Rounded.Gesture, uiState.activeTool == CanvasTool.LASSO) {
-                                viewModel.setActiveTool(CanvasTool.LASSO)
-                                showSettingsForTool = null
-                            }
-                        }
-
-                        item {
-                            ToolButton(Icons.Rounded.Image, uiState.activeTool == CanvasTool.IMAGE) {
-                                if (currentPage != null) {
-                                    if (uiState.activeTool == CanvasTool.IMAGE) {
-                                        imagePicker.launch("image/*")
-                                    } else {
-                                        viewModel.setActiveTool(CanvasTool.IMAGE)
-                                    }
-                                }
-                            }
-                        }
-
-                        item {
-                            IconButton(
-                                onClick = { viewModel.undo() },
-                                enabled = uiState.undoStack.isNotEmpty()
-                            ) {
-                                Icon(
-                                    Icons.Rounded.Undo,
-                                    contentDescription = null,
-                                    tint = if (uiState.undoStack.isNotEmpty()) Color(0xFF6C5CE7) else Color.LightGray
-                                )
-                            }
-                        }
-
-                        item {
-                            IconButton(
-                                onClick = { viewModel.redo() },
-                                enabled = uiState.redoStack.isNotEmpty()
-                            ) {
-                                Icon(
-                                    Icons.Rounded.Redo,
-                                    contentDescription = null,
-                                    tint = if (uiState.redoStack.isNotEmpty()) Color(0xFF6C5CE7) else Color.LightGray
-                                )
-                            }
-                        }
-
-                        item {
-                            IconButton(onClick = { pdfLauncher.launch("${uiState.notebookTitle}.pdf") }) {
-                                Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, tint = Color(0xFFD63031))
-                            }
-                        }
-
-                        item {
-                            IconButton(onClick = { viewModel.showStylusConfigDialog() }) {
-                                Icon(Icons.Rounded.Tune, contentDescription = null, tint = Color(0xFF00B894))
-                            }
-                        }
-                    }
-                },
+                title = { Text(uiState.notebookTitle.ifBlank { "Aura Scribble" }) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Rounded.ArrowBack, contentDescription = null)
                     }
                 },
                 actions = {
-                    if (uiState.hasLassoSelection) {
-                        IconButton(onClick = { viewModel.copyLassoSelection() }) {
-                            Icon(Icons.Rounded.ContentCopy, contentDescription = null)
-                        }
-                        IconButton(onClick = { viewModel.deleteLassoSelection() }) {
-                            Icon(Icons.Rounded.Delete, contentDescription = null, tint = Color.Red)
-                        }
+                    IconButton(onClick = { pdfLauncher.launch("${uiState.notebookTitle.ifBlank { "notebook" }}.pdf") }) {
+                        Icon(Icons.Rounded.PictureAsPdf, contentDescription = null)
                     }
-
-                    if (uiState.copiedStrokes.isNotEmpty() || uiState.copiedImages.isNotEmpty()) {
-                        IconButton(
-                            onClick = {
-                                currentPage?.let { page ->
-                                    viewModel.pasteSelection(page.page.id)
-                                }
-                            }
-                        ) {
-                            Icon(Icons.Rounded.ContentPaste, contentDescription = null)
-                        }
-                    }
-                }
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = Color(0xFFF8F5FF)
+                )
             )
-        }
-    ) { padding ->
+        },
+        containerColor = Color(0xFFF3EEFF)
+    ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .background(Color(0xFFF5F0FF))
-                .padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(paddingValues)
+                .padding(12.dp)
         ) {
+            ToolRow(
+                activeTool = uiState.activeTool,
+                onPenClick = {
+                    if (uiState.activeTool == CanvasTool.PEN) {
+                        showPenSettings = true
+                    } else {
+                        viewModel.setActiveTool(CanvasTool.PEN)
+                    }
+                },
+                onHighlighterClick = {
+                    if (uiState.activeTool == CanvasTool.HIGHLIGHTER) {
+                        showHighlighterSettings = true
+                    } else {
+                        viewModel.setActiveTool(CanvasTool.HIGHLIGHTER)
+                    }
+                },
+                onEraserClick = { viewModel.setActiveTool(CanvasTool.ERASER) },
+                onLassoClick = { viewModel.setActiveTool(CanvasTool.LASSO) },
+                onImageClick = {
+                    viewModel.setActiveTool(CanvasTool.IMAGE)
+                    imagePicker.launch("image/*")
+                },
+                onUndoClick = { viewModel.undo() },
+                onRedoClick = { viewModel.redo() },
+                onPasteClick = {
+                    currentPage?.let { viewModel.pasteSelection(it.page.id) }
+                },
+                onCopyClick = { viewModel.copyLassoSelection() },
+                onDeleteSelectionClick = { viewModel.deleteLassoSelection() }
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
             if (currentPage != null) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -305,8 +234,8 @@ fun CanvasScreen(
                         enabled = currentPageIndex > 0
                     ) {
                         Icon(Icons.Rounded.ChevronLeft, contentDescription = null)
-                        Spacer(Modifier.width(4.dp))
-                        Text("הקודם")
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Previous")
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -314,10 +243,8 @@ fun CanvasScreen(
                             Icon(Icons.Rounded.GridView, contentDescription = null, tint = Color(0xFF6C5CE7))
                         }
                         Text(
-                            text = "עמוד ${currentPageIndex + 1} / ${uiState.pages.size}",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFF636E72)
+                            text = "Page ${currentPageIndex + 1} / ${uiState.pages.size}",
+                            color = Color(0xFF5F5A74)
                         )
                     }
 
@@ -325,15 +252,21 @@ fun CanvasScreen(
                         onClick = { if (currentPageIndex < uiState.pages.lastIndex) currentPageIndex++ },
                         enabled = currentPageIndex < uiState.pages.lastIndex
                     ) {
-                        Text("הבא")
-                        Spacer(Modifier.width(4.dp))
+                        Text("Next")
+                        Spacer(modifier = Modifier.width(4.dp))
                         Icon(Icons.Rounded.ChevronRight, contentDescription = null)
                     }
                 }
 
-                PageContainer(currentPage, uiState, viewModel)
+                Spacer(modifier = Modifier.height(12.dp))
 
-                Spacer(Modifier.height(16.dp))
+                SinglePageCanvas(
+                    page = currentPage,
+                    uiState = uiState,
+                    viewModel = viewModel
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Button(
                     onClick = {
@@ -345,606 +278,477 @@ fun CanvasScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C5CE7))
                 ) {
                     Icon(Icons.Rounded.Add, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("הוסף עמוד חדש")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Add page")
                 }
             }
         }
+    }
 
-        if (selectedPageForTemplate != null) {
-            TemplateSelectionDialog(
-                onDismiss = { selectedPageForTemplate = null },
-                onSelect = { bg ->
-                    selectedPageForTemplate?.let { pageId ->
-                        viewModel.updatePageBackground(pageId, bg)
-                    }
-                    selectedPageForTemplate = null
-                }
-            )
-        }
+    if (showPenSettings) {
+        PenSettingsDialog(
+            currentColor = uiState.penColor,
+            currentWidth = uiState.penWidth,
+            currentPenType = uiState.activePenType,
+            onDismiss = { showPenSettings = false },
+            onColorChange = { color -> viewModel.updateToolSettings(color, uiState.penWidth, CanvasTool.PEN) },
+            onWidthChange = { width -> viewModel.updateToolSettings(uiState.penColor, width, CanvasTool.PEN) },
+            onPenTypeChange = { penType -> viewModel.setPenType(penType) }
+        )
+    }
 
-        if (uiState.showStylusConfigDialog) {
-            StylusConfigDialog(
-                currentConfig = uiState.stylusConfig,
-                onDismiss = { viewModel.dismissStylusConfigDialog() },
-                onSave = { viewModel.setStylusConfig(it) }
-            )
-        }
+    if (showHighlighterSettings) {
+        HighlighterSettingsDialog(
+            currentColor = uiState.highlighterColor,
+            currentWidth = uiState.highlighterWidth,
+            currentShape = uiState.activeMarkerShape,
+            onDismiss = { showHighlighterSettings = false },
+            onColorChange = { color -> viewModel.updateToolSettings(color, uiState.highlighterWidth, CanvasTool.HIGHLIGHTER) },
+            onWidthChange = { width -> viewModel.updateToolSettings(uiState.highlighterColor, width, CanvasTool.HIGHLIGHTER) },
+            onShapeChange = { shape -> viewModel.setMarkerShape(shape) }
+        )
+    }
+
+    if (selectedPageForTemplate != null) {
+        TemplateSelectionDialog(
+            onDismiss = { selectedPageForTemplate = null },
+            onSelect = { background ->
+                viewModel.updatePageBackground(selectedPageForTemplate!!, background)
+                selectedPageForTemplate = null
+            }
+        )
     }
 }
 
 @Composable
-fun ToolButton(
-    icon: ImageVector,
-    isActive: Boolean,
+private fun ToolRow(
+    activeTool: CanvasTool,
+    onPenClick: () -> Unit,
+    onHighlighterClick: () -> Unit,
+    onEraserClick: () -> Unit,
+    onLassoClick: () -> Unit,
+    onImageClick: () -> Unit,
+    onUndoClick: () -> Unit,
+    onRedoClick: () -> Unit,
+    onPasteClick: () -> Unit,
+    onCopyClick: () -> Unit,
+    onDeleteSelectionClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White, RoundedCornerShape(24.dp))
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceEvenly
+    ) {
+        ToolIcon(Icons.Rounded.Edit, activeTool == CanvasTool.PEN, onPenClick)
+        ToolIcon(Icons.Rounded.Brush, activeTool == CanvasTool.HIGHLIGHTER, onHighlighterClick)
+        ToolIcon(Icons.Rounded.AutoFixHigh, activeTool == CanvasTool.ERASER, onEraserClick)
+        ToolIcon(Icons.Rounded.Gesture, activeTool == CanvasTool.LASSO, onLassoClick)
+        ToolIcon(Icons.Rounded.Image, activeTool == CanvasTool.IMAGE, onImageClick)
+        ToolIcon(Icons.Rounded.Undo, false, onUndoClick)
+        ToolIcon(Icons.Rounded.Redo, false, onRedoClick)
+        ToolIcon(Icons.Rounded.ContentCopy, false, onCopyClick)
+        ToolIcon(Icons.Rounded.ContentPaste, false, onPasteClick)
+        ToolIcon(Icons.Rounded.Delete, false, onDeleteSelectionClick)
+        ToolIcon(Icons.Rounded.Tune, false, {})
+    }
+}
+
+@Composable
+private fun ToolIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    active: Boolean,
     onClick: () -> Unit
 ) {
     IconButton(
         onClick = onClick,
         modifier = Modifier
-            .size(46.dp)
+            .size(42.dp)
             .background(
-                if (isActive) Color(0xFFEDE7F6) else Color.Transparent,
-                CircleShape
-            )
-            .border(
-                if (isActive) 1.5.dp else 0.dp,
-                if (isActive) Color(0xFF6C5CE7) else Color.Transparent,
+                if (active) Color(0xFFEDE7F6) else Color.Transparent,
                 CircleShape
             )
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = if (isActive) Color(0xFF6C5CE7) else Color(0xFF636E72),
-            modifier = Modifier.size(24.dp)
+            tint = if (active) Color(0xFF6C5CE7) else Color(0xFF5F5A74)
         )
     }
 }
 
 @Composable
-fun ToolSettingsPopup(
-    tool: CanvasTool,
+private fun SinglePageCanvas(
+    page: PageUiModel,
     uiState: CanvasUiState,
-    onDismiss: () -> Unit,
     viewModel: CanvasViewModel
 ) {
-    val isPen = tool == CanvasTool.PEN
-    val isHighlighter = tool == CanvasTool.HIGHLIGHTER
-    val palette = if (isHighlighter) AuraHighlighterPalette else AuraPastelPalette
-    val currentColor = when (tool) {
-        CanvasTool.HIGHLIGHTER -> uiState.highlighterColor
-        CanvasTool.SHAPE -> uiState.shapeColor
-        else -> uiState.penColor
-    }
-    val currentWidth = when (tool) {
-        CanvasTool.HIGHLIGHTER -> uiState.highlighterWidth
-        CanvasTool.SHAPE -> uiState.shapeWidth
-        else -> uiState.penWidth
-    }
-
-    Popup(
-        alignment = Alignment.TopCenter,
-        offset = IntOffset(0, 160),
-        onDismissRequest = onDismiss,
-        properties = PopupProperties(focusable = true)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(0.707f)
+            .shadow(12.dp, RoundedCornerShape(10.dp))
+            .background(Color.White, RoundedCornerShape(10.dp))
+            .clipToBounds()
     ) {
-        Surface(
-            modifier = Modifier
-                .width(340.dp)
-                .shadow(12.dp, RoundedCornerShape(28.dp)),
-            shape = RoundedCornerShape(28.dp),
-            color = Color(0xFFFAF8FF)
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(64.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0xFFF1F2F6))
-                        .border()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWid.Center
-                    ) {
-                        androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
-                            val points = if (tool == CanvasTool.SHAPE) {
-                                listOf(
-                                    StrokePoint(size.width * 0.35f, size.height * 0.35f, 1f),
-                                    StrokePoint(size.width * 0.65f, size.height * 0.65f, 1f)
-                                )
-                            } else {
-                                listOf(
-                                    StrokePoint(size.width * 0.15f, size.height / 2 + 12, 0.4f),
-                                    StrokePoint(size.width * 0.35f, size.height / 2 - 12, 0.8f),
-                                    StrokePoint(size.width * 0.55f, size.height / 2 + 8, 1.0f),
-                                    StrokePoint(size.width * 0.75f, size.height / 2 - 8, 0.7f),
-                                    StrokePoint(size.width * 0.90f, size.height / 2 + 6, 0.5f)
-                                )
-                            }
+        BackgroundCanvas(page.background)
 
-                            drawComplexStroke(
-                                CanvasStroke(
-                                    id = "preview",
-                                    points = points,
-                                    color = currentColor,
-                                    strokeWidth = currentWidth.coerceAtMost(30f),
-                                    isHighlighter = isHighlighter,
-                                    penType = uiState.activePenType,
-                                    markerShape = uiState.activeMarkerShape,
-                                    shapeType = if (tool == CanvasTool.SHAPE) uiState.activeShape else ShapeType.FREEHAND
-                                ),
-                                Offset.Zero
-                            )
-                        }
-                    }
+        DrawingCanvas(
+            activeTool = uiState.activeTool,
+            strokes = if (uiState.selectionPageId == page.page.id) {
+                page.strokes.filterNot { it.id in uiState.hiddenStrokeIds }
+            } else {
+                page.strokes
+            },
+            selectedStrokes = if (uiState.selectionPageId == page.page.id) uiState.selectedStrokes else emptyList(),
+            dragOffset = Offset.Zero,
+            currentStroke = if (uiState.drawingPageId == page.page.id) uiState.currentStroke else null,
+            lassoPath = if (uiState.drawingPageId == page.page.id || uiState.selectionPageId == page.page.id) {
+                uiState.lassoPath
+            } else {
+                emptyList()
+            },
+            selectionBounds = if (uiState.selectionPageId == page.page.id) uiState.selectionBounds else null,
+            onDrawAction = { action, x, y, pressure, isEraser ->
+                viewModel.handleDrawAction(page.page.id, action, x, y, pressure, isEraser)
+            }
+        )
 
-                    Spacer(Modifier.height(16.dp))
-
-                    if (isPen) {
-                        Text("סוג עט", fontSize = 12.sp, color = Color(0xFF636E72), fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(
-                                PenType.BALLPOINT to "Ball Pen",
-                                PenType.FOUNTAIN to "Fountain",
-                                PenType.CALLIGRAPHY to "Calligraphy"
-                            ).forEach { (type, label) ->
-                                FilterChip(
-                                    selected = uiState.activePenType == type,
-                                    onClick = { viewModel.setPenType(type) },
-                                    label = { Text(label, fontSize = 11.sp) }
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(12.dp))
-                    }
-
-                    if (isHighlighter) {
-                        Text("צורת מרקר", fontSize = 12.sp, color = Color(0xFF636E72), fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(
-                                MarkerShape.ROUND to "עגול",
-                                MarkerShape.SQUARE to "מרובע"
-                            ).forEach { (shape, label) ->
-                                FilterChip(
-                                    selected = uiState.activeMarkerShape == shape,
-                                    onClick = { viewModel.setMarkerShape(shape) },
-                                    label = { Text(label, fontSize = 12.sp) }
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(12.dp))
-                    }
-
-                    if (tool == CanvasTool.SHAPE) {
-                        Text("סוג צורה", fontSize = 12.sp, color = Color(0xFF636E72), fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(8.dp))
-                        LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.height(112.dp)) {
-                            items(ShapeType.values().filter { it != ShapeType.FREEHAND }) { shapeType ->
-                                FilterChip(
-                                    selected = uiState.activeShape == shapeType,
-                                    onClick = { viewModel.setShapeMode(shapeType) },
-                                    label = {
-                                        Text(
-                                            shapeType.name.lowercase().replaceFirstChar { ch -> ch.uppercase() },
-                                            fontSize = 11.sp
-                                        )
-                                    }
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(12.dp))
-                    }
-
-                    Text(
-                        text = "עובי: ${currentWidth.toInt()}px",
-                        fontSize = 12.sp,
-                        color = Color(0xFF636E72),
-                        fontWeight = FontWeight.Medium
-                    )
-
-                    Slider(
-                        value = currentWidth,
-                        onValueChange = { viewModel.updateToolSettings(currentColor, it, tool) },
-                        valueRange = if (isHighlighter) 10f..80f else 1f..40f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = Color(0xFF6C5CE7),
-                            activeTrackColor = Color(0xFF6C5CE7).copy(alpha = 0.6f)
-                        )
-                    )
-
-                    Spacer(Modifier.height(8.dp))
-                    Text("צבע", fontSize = 12.sp, color = Color(0xFF636E72), fontWeight = FontWeight.Medium)
-                    Spacer(Modifier.height(8.dp))
-
-                    LazyVerticalGrid(columns = GridCells.Fixed(6), modifier = Modifier.height(204.dp)) {
-                        items(palette) { color ->
-                            val isSelected = Color(currentColor) == color
-                            Box(
-                                modifier = Modifier
-                                    .padding(4.dp)
-                                    .size(32.dp)
-                                    .clip(CircleShape)
-                                    .background(color)
-                                    .border(
-                                        if (isSelected) 3.dp else 0.5.dp,
-                                        if (isSelected) Color(0xFF6C5CE7) else Color.White.copy(alpha = 0.5f),
-                                        CircleShape
-                                    )
-                                    .clickable {
-                                        viewModel.updateToolSettings(color.toArgb(), currentWidth, tool)
-                                    }
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-
-                    Button(
-                        onClick = onDismiss,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C5CE7))
-                    ) {
-                        Text("סגור")
-                    }
+        page.images.forEach { image ->
+            val selected = uiState.selectedImages.any { it.id == image.id }
+            if (!selected) {
+                DraggableImage(
+                    image = image,
+                    enabled = uiState.activeTool == CanvasTool.IMAGE
+                ) { newX, newY, newW, newH ->
+                    viewModel.updateImageBounds(page.page.id, image.id, newX, newY, newW, newH)
                 }
             }
         }
     }
+}
 
-    @Composable
-    fun PageContainer(
-        page: PageUiModel,
-        uiState: CanvasUiState,
-        viewModel: CanvasViewModel
+@Composable
+private fun PenSettingsDialog(
+    currentColor: Int,
+    currentWidth: Float,
+    currentPenType: PenType,
+    onDismiss: () -> Unit,
+    onColorChange: (Int) -> Unit,
+    onWidthChange: (Float) -> Unit,
+    onPenTypeChange: (PenType) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done") }
+        },
+        title = { Text("Pen settings") },
+        text = {
+            Column {
+                Text("Pen type", fontSize = 14.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = currentPenType == PenType.BALLPOINT,
+                        onClick = { onPenTypeChange(PenType.BALLPOINT) },
+                        label = { Text("Ball") }
+                    )
+                    FilterChip(
+                        selected = currentPenType == PenType.FOUNTAIN,
+                        onClick = { onPenTypeChange(PenType.FOUNTAIN) },
+                        label = { Text("Fountain") }
+                    )
+                    FilterChip(
+                        selected = currentPenType == PenType.CALLIGRAPHY,
+                        onClick = { onPenTypeChange(PenType.CALLIGRAPHY) },
+                        label = { Text("Calligraphy") }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Width: ${currentWidth.toInt()} px", fontSize = 14.sp)
+                Slider(
+                    value = currentWidth,
+                    onValueChange = onWidthChange,
+                    valueRange = 1f..24f
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Color", fontSize = 14.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+                ColorRow(
+                    palette = PenPalette,
+                    selectedColor = currentColor,
+                    onColorSelected = { onColorChange(it) }
+                )
+            }
+        }
+    )
+}
+
+@Composable
+private fun HighlighterSettingsDialog(
+    currentColor: Int,
+    currentWidth: Float,
+    currentShape: MarkerShape,
+    onDismiss: () -> Unit,
+    onColorChange: (Int) -> Unit,
+    onWidthChange: (Float) -> Unit,
+    onShapeChange: (MarkerShape) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done") }
+        },
+        title = { Text("Highlighter settings") },
+        text = {
+            Column {
+                Text("Shape", fontSize = 14.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = currentShape == MarkerShape.ROUND,
+                        onClick = { onShapeChange(MarkerShape.ROUND) },
+                        label = { Text("Round") }
+                    )
+                    FilterChip(
+                        selected = currentShape == MarkerShape.SQUARE,
+                        onClick = { onShapeChange(MarkerShape.SQUARE) },
+                        label = { Text("Square") }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Width: ${currentWidth.toInt()} px", fontSize = 14.sp)
+                Slider(
+                    value = currentWidth,
+                    onValueChange = onWidthChange,
+                    valueRange = 8f..48f
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Color", fontSize = 14.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+                ColorRow(
+                    palette = HighlighterPalette,
+                    selectedColor = currentColor,
+                    onColorSelected = { onColorChange(it) }
+                )
+            }
+        }
+    )
+}
+
+@Composable
+private fun ColorRow(
+    palette: List<Color>,
+    selectedColor: Int,
+    onColorSelected: (Int) -> Unit
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        palette.forEach { color ->
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .background(color, CircleShape)
+                    .border(
+                        width = if (selectedColor == color.toArgb()) 3.dp else 1.dp,
+                        color = if (selectedColor == color.toArgb()) Color(0xFF6C5CE7) else Color.LightGray,
+                        shape = CircleShape
+                    )
+                    .clickable { onColorSelected(color.toArgb()) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun TemplateSelectionDialog(
+    onDismiss: () -> Unit,
+    onSelect: (PageBackground) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+        title = { Text("Choose page template") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                TemplateButton("Plain") { onSelect(PageBackground.PLAIN) }
+                TemplateButton("Ruled") { onSelect(PageBackground.RULED) }
+                TemplateButton("Grid") { onSelect(PageBackground.GRID) }
+                TemplateButton("Dots") { onSelect(PageBackground.DOT_GRID) }
+                TemplateButton("Music") { onSelect(PageBackground.MUSIC_LINES) }
+            }
+        }
+    )
+}
+
+@Composable
+private fun TemplateButton(
+    label: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0xFFF8F5FF),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(16.dp)
+        )
+    }
+}
+
+@Composable
+private fun DraggableImage(
+    image: CanvasImage,
+    enabled: Boolean,
+    onUpdate: (Float, Float, Float, Float) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var bitmap by remember(image.id) { mutableStateOf<ImageBitmap?>(null) }
+    var x by remember(image.id) { mutableFloatStateOf(image.x) }
+    var y by remember(image.id) { mutableFloatStateOf(image.y) }
+    var width by remember(image.id) { mutableFloatStateOf(image.width) }
+    var height by remember(image.id) { mutableFloatStateOf(image.height) }
+
+    LaunchedEffect(image.uri) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val uri = Uri.parse(image.uri)
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val bmp = BitmapFactory.decodeStream(stream)
+                    withContext(Dispatchers.Main) {
+                        bitmap = bmp?.asImageBitmap()
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier.offset { IntOffset(x.toInt(), y.toInt()) }
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f, fill = false)
-                .aspectRatio(0.707f)
-                .shadow(12.dp, RoundedCornerShape(8.dp))
-                .background(Color.White, RoundedCornerShape(8.dp))
-                .clipToBounds()
+                .size(width.dp, height.dp)
         ) {
-            BackgroundCanvas(page.background)
-
-            DrawingCanvas(
-                activeTool = uiState.activeTool,
-                strokes = if (uiState.selectionPageId == page.page.id) {
-                    page.strokes.filterNot { it.id in uiState.hiddenStrokeIds }
-                } else {
-                    page.strokes
-                },
-                selectedStrokes = if (uiState.selectionPageId == page.page.id) uiState.selectedStrokes else emptyList(),
-                dragOffset = Offset.Zero,
-                currentStroke = if (uiState.drawingPageId == page.page.id) uiState.currentStroke else null,
-                lassoPath = if (uiState.drawingPageId == page.page.id || uiState.selectionPageId == page.page.id) {
-                    uiState.lassoPath
-                } else {
-                    emptyList()
-                },
-                selectionBounds = if (uiState.selectionPageId == page.page.id) uiState.selectionBounds else null,
-                onDrawAction = { action, x, y, pressure, isEraser ->
-                    viewModel.handleDrawAction(page.page.id, action, x, y, pressure, isEraser)
-                }
-            )
-
-            page.images.forEach { img ->
-                val isSelected = uiState.selectedImages.any { it.id == img.id }
-                if (!isSelected) {
-                    ResizableDraggableImage(
-                        img = img,
-                        isActive = uiState.activeTool == CanvasTool.IMAGE
-                    ) { nx, ny, nw, nh ->
-                        viewModel.updateImageBounds(page.page.id, img.id, nx, ny, nw, nh)
-                    }
-                }
+            bitmap?.let {
+                Image(
+                    bitmap = it,
+                    contentDescription = null,
+                    contentScale = ContentScale.FillBounds,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
 
-            if (uiState.selectionPageId == page.page.id) {
-                uiState.selectedImages.forEach { img ->
-                    ResizableDraggableImage(img = img, isActive = false) { _, _, _, _ -> }
-                }
+            if (enabled) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .border(2.dp, Color(0xFF6C5CE7), RoundedCornerShape(6.dp))
+                )
             }
         }
     }
 
-    @Composable
-    fun TemplateSelectionDialog(
-        onDismiss: () -> Unit,
-        onSelect: (PageBackground) -> Unit
-    ) {
-        val templates = listOf(
-            Triple(PageBackground.PLAIN, "ריק", "ללא קווים"),
-            Triple(PageBackground.RULED, "מחוקק", "קווים אופקיים"),
-            Triple(PageBackground.GRID, "משובץ", "רשת ריבועים"),
-            Triple(PageBackground.DOT_GRID, "נקודות", "רשת נקודות"),
-            Triple(PageBackground.MUSIC_LINES, "תוים", "קווי תווים")
-        )
+    if (enabled) {
+        LaunchedEffect(x, y, width, height) {
+            onUpdate(x, y, width, height)
+        }
+    }
+}
 
-        AlertDialog(
-            onDismissRequest = onDismiss,
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = onDismiss) { Text("ביטול") }
-            },
-            title = { Text("בחרי רקע לעמוד", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    templates.forEach { (background, title, subtitle) ->
-                        Surface(
-                            onClick = { onSelect(background) },
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFFF8F5FF),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text(title, fontWeight = FontWeight.Medium)
-                                Text(subtitle, fontSize = 12.sp, color = Color(0xFF636E72))
-                            }
-                        }
-                    }
+@Composable
+private fun BackgroundCanvas(backgroundType: PageBackground) {
+    androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+        val lineColor = Color(0xFFB0B7C3)
+        val spacing = 40f
+
+        when (backgroundType) {
+            PageBackground.PLAIN -> Unit
+
+            PageBackground.RULED -> {
+                var y = spacing
+                while (y < size.height) {
+                    drawLine(
+                        color = lineColor.copy(alpha = 0.45f),
+                        start = Offset(0f, y),
+                        end = Offset(size.width, y),
+                        strokeWidth = 1f
+                    )
+                    y += spacing
                 }
             }
-        )
+
+            PageBackground.GRID -> {
+                var y = spacing
+                while (y < size.height) {
+                    drawLine(
+                        color = lineColor.copy(alpha = 0.35f),
+                        start = Offset(0f, y),
+                        end = Offset(size.width, y),
+                        strokeWidth = 1f
+                    )
+                    y += spacing
+                }
+
+                var x = spacing
+                while (x < size.width) {
+                    drawLine(
+                        color = lineColor.copy(alpha = 0.35f),
+                        start = Offset(x, 0f),
+                        end = Offset(x, size.height),
+                        strokeWidth = 1f
+                    )
+                    x += spacing
+                }
+            }
+
+            PageBackground.DOT_GRID -> {
+                var y = spacing
+                while (y < size.height) {
+                    var x = spacing
+                    while (x < size.width) {
+                        drawCircle(
+                            color = lineColor.copy(alpha = 0.5f),
+                            radius = 2f,
+                            center = Offset(x, y)
+                        )
+                        x += spacing
+                    }
+                    y += spacing
+                }
+            }
+
+            PageBackground.MUSIC_LINES -> {
+                val staffGap = 14f
+                var startY = spacing
+                while (startY + staffGap * 4 < size.height) {
+                    repeat(5) { i ->
+                        val y = startY + i * staffGap
+                        drawLine(
+                            color = lineColor.copy(alpha = 0.45f),
+                            start = Offset(20f, y),
+                            end = Offset(size.width - 20f, y),
+                            strokeWidth = 1f
+                        )
+                    }
+                    startY += 90f
+                }
+            }
+        }
     }
-
-    @Composable
-    fun StylusConfigDialog(
-        currentConfig: StylusButtonConfig,
-        onDismiss: () -> Unit,
-        onSave: (StylusButtonConfig) -> Unit
-    ) {
-        var button1Action by remember { mutableStateOf(currentConfig.button1Action) }
-        var button2Action by remember { mutableStateOf(currentConfig.button2Action) }
-
-        Dialog(onDismissRequest = onDismiss) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = Color(0xFFFAF8FF),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(24.dp)) {
-                    Text("הגדרות כפתורי עט", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Spacer(Modifier.height(20.dp))
-
-                    Text("כפתור 1", fontWeight = FontWeight.Medium)
-                    Spacer(Modifier.height(8.dp))
-                    ActionDropdown(selected = button1Action, onSelect = { button1Action = it })
-
-                    Spacer(Modi)) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidSpacer(Modi)) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidn = it })
-
-                    Spacer(Modifier.height(24.dp))
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(
-                            onClick = onDismiss,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("ביטול")
-                        }
-
-                        Button(
-                            onClick = {
-                                onSave(
-                                    StylusButtonConfig(
-                                        button1Action = button1Action,
-                                        button2Action = button2Action
-                                    )
-                                )
-                            },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C5CE7))
-                        ) {
-                            Text("שמור")
-                            )) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidable
-                                fun ActionDropdown(
-                                    selected: StylusAction,
-                                    onSelect: (StylusAction) -> Unit
-                                ) {
-                                    var expanded by remember { mutableStateOf(false) }
-
-                                    val labels = mapOf(
-                                        StylusAction.TOGGLE_PEN_ERASER to "החלף עט/מחק",
-                                        StylusAction.UNDO to "Undo",
-                                        StylusAction.REDO to "Redo",
-                                        StylusAction.CYCLE_PEN_TYPE to "החלף סוג עט",
-                                        StylusAction.CYCLE_COLOR to "החלף צבע",
-                                        StylusAction.OPEN_PALETTE to "פתח פלטה",
-                                        StylusAction.NONE to "ללא פעולה"
-                                    )
-
-                                    ExposedDropdownMenuBox(
-                                        expanded = expanded,
-                                        onExpandedChange = { expanded = it }
-                                    ) {
-                                        OutlinedTextField(
-                                            value = labels[selected] ?: selected.name,
-                                            onValueChange = {},
-                                            readOnly = true,
-                                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                                            modifier = Modifier.menuAnchor().fillMaxWidth(),
-                                            shape = RoundedCornerShape(12.dp)
-                                        )
-
-                                        ExposedDropdownMenu(
-                                            expanded = expanded,
-                                            onDismissRequest = { expanded = false }
-                                        ) {
-                                            StylusAction.values().forEach { action ->
-                                                DropdownMenuItem(
-                                                    text = { Text(labels[action] ?: action.name) },
-                                                    onClick = {
-                                                        onSelect(action)
-                                                        expanded = false
-                                                    }
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-
-                                @Composable
-                                fun ResizableDraggableImage(
-                                    img: CanvasImage,
-                                    isActive: Boolean,
-                                    onUpdate: (Float, Float, Float, Float) -> )) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidmageBitmap?>(null) }
-                            var x by remember(img.id) { mutableStateOf(img.x) }
-                            var y by remember(img.id) { mutableStateOf(img.y) }
-                            var w by remember(img.id) { mutableStateOf(img.width) }
-                            var h by remember(img.id) { mutableStateOf(img.heigh)) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWid         .fillMaxWidroid.net.Uri.parse(img.uri)
-                                            context.contentResolver.openInputStream(uri)?.use { stream ->
-                                        android.graphics.BitmapFactory.decodeStream(stream)?.let {
-                                            bitmap = it.asImageBitm)) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxWid   }
-                                        }
-
-                                        Box(modifier = Modifier.offset { IntOffset(x.toInt(), y.toInt()) }) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(
-                                                        with(LocalDensity.current) { w.toDp() },
-                                                        with(LocalDen)) {
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .fillMaxWid      if (isActive) {
-                                                                detectDragGestures(
-                                                                    onDragEnd = { onUpdate(x, y, w, h) }
-                                                                ) { change, dragAmount ->
-                                                                    change.consume()
-                                                                    x += dragAm)) {
-                                                                    Box(
-                                                                        modifier = Modifier
-                                                                            .fillMaxWid                }
-                                                                    ) {
-                                                                    bitmap?.let {
-                                                                        Image(
-                                                                            bitmap = it,
-                                                                            contentDescription = null,
-                                                                            contentScale = ContentScale.FillBou)) {
-                                                                        Box(
-                                                                            modifier = Modifier
-                                                                                .fillMaxWid   if (isActive) {
-                                                                                Box(
-                                                                                    modifier = Modi)) {
-                                                                                    Box(
-                                                                                        modifier = Modifier
-                                                                                            .fillMaxWidRou)) {
-                                                                                    Box(
-                                                                                        modifier = Modifier
-                                                                                            .fillMaxWidr
-                                                                                            .size(24)) {
-                                                                                        Box(
-                                                                                            modifier = Modifier
-                                                                                                .fillMaxWidFF6C5CE7), RoundedCornerShape(4.)) {
-                                                                                        Box(
-                                                                                            modifier = Modifier
-                                                                                                .fillMaxWid                              onDragEnd = { onUpdate(x, y, w, )) {
-                                                                                                Box(
-                                                                                                    modifier = Modifier
-                                                                                                        .fillMaxWidsume()
-                                                                                                            w = (w + dragAmount.x).coerceAtLeas)) {
-                                                                                                Box(
-                                                                                                    modifier = Modifier
-                                                                                                        .fillMaxWidx(
-                                                                                                            modifier = Modifier
-                                                                                                                .fillMaxWid    }
-                                                                                            }
-
-                                                                                                @Composable
-                                                                                                fun BackgroundCanvas(
-                                                                                                    backgroundType: PageBackground,
-                                                                                                    modifier: Modifier = Modifier.fillMaxSi)) {
-                                                                                                    Box(
-                                                                                                        modifier = Modifier
-                                                                                                            .fillMaxWid0xFFB2BEC3).copy(alp)) {
-                                                                                                    Box(
-                                                                                                        modifier = Modifier
-                                                                                                            .fillMaxWidifier
-                                                                                                            .fillMaxWidntY = spacing
-                                                                                                        while (currentY < size.height) {
-                                                                                                            drawLine(lineColor, Of)) {
-                                                                                                                Box(
-                                                                                                                    modifier = Modifier
-                                                                                                                        .fillMaxWid           Box(
-                                                                                                                            modifier = Modifier
-                                                                                                                                .fillMaxWidtY = spacing
-                                                                                                                    while (currentY < size.he)) {
-                                                                                                                    Box(
-                                                                                                                        modifier = Modifier
-                                                                                                                            .fillMaxWid)) {
-                                                                                                                    Box(
-                                                                                                                        modifier = Modifier
-                                                                                                                            .fillMaxWid
-                                                                                                                        while (currentX < size.widt)) {
-                                                                                                                        Box(
-                                                                                                                            modifier = Modifier
-                                                                                                                                .fillMaxWid {
-                                                                                                                                    Box(
-                                                                                                                                        modifier = Modifier
-                                                                                                                                            .fillMaxWidund.DOT_GRID -> {
-                                                                                                                                    var curr)) {
-                                                                                                                                    Box(
-                                                                                                                                        modifier = Modifier
-                                                                                                                                            .fillMaxWidacing
-                                                                                                                                        while (currentX < size.widt)) {
-                                                                                                                                        Box(
-                                                                                                                                            modifier = Modifier
-                                                                                                                                                .fillMaxWid                        currentX += spa)) {
-                                                                                                                                        Box(
-                                                                                                                                            modifier = Modifier
-                                                                                                                                                .fillMaxWid           PageBackground.MUSIC_LINES -> {
-                                                                                                                                        val staffSpacing = 12.dp.)) {
-                                                                                                                                        Box(
-                                                                                                                                            modifier = Modifier
-                                                                                                                                                .fillMaxWidg * 4) {
-                                                                                                                                            for (i in)) {
-                                                                                                                                            Box(
-                                                                                                                                                modifier = Modifier
-                                                                                                                                                    .fillMaxWid                 start = Offset(16.dp.toPx(), s)) {
-                                                                                                                                            Box(
-                                                                                                                                                modifier = Modifier
-                                                                                                                                                    .fillMaxWid +)) {
-                                                                                                                                            Box(
-                                                                                                                                                modifier = Modifier
-                                                                                                                                                    .fillMaxWid            }
-                                                                                                                                            staffY += staffSpacing * 4 + spacing )) {
-                                                                                                                                            Box(
-                                                                                                                                                modifier = Modifier
-                                                                                                                                                    .fillMaxWid`
-
-                                                                                                                                            ## למה זה אמור לפתור את הבע)) {
-                                                                                                                                            Box(
-                                                                                                                                                modifier = Modifier
-                                                                                                                                                    .fillMaxWid= Modifier
-                                                                                                                                                    .fillMaxWid                   .fillMaxWid Modifier
-                                                                                                                                                        .fillMaxWid                 .fillMaxWid   Box(
-                                                                                                                                                    modifier = Modifier
-                                                                                                                                                        .fillMaxWid                  .fillMaxWid       modifier = Modifier
-                                                                                                                                                            .fillMaxWid                      .fillMaxWid  .fillMaxWidmodifier = Modifier
-                                                                                                                                                            .fillMaxWidifier
-                                                                                                                                                            .fillMaxWid Modifier
-                                                                                                                                                        .fillMaxWidifier
-                                                                                                                                                        .fillMaxWidxWid
+}
