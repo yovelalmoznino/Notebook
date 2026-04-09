@@ -49,7 +49,6 @@ fun DrawingCanvas(
                 View(context).apply {
                     setOnTouchListener { _, event ->
                         val toolType = event.getToolType(0)
-                        // הפרדת מגע אצבע ועט: אצבע לא מציירת (אלא אם בלאסו) כדי לאפשר גלילה
                         if (toolType == MotionEvent.TOOL_TYPE_FINGER && activeTool != CanvasTool.LASSO) {
                             return@setOnTouchListener false
                         }
@@ -69,14 +68,11 @@ fun DrawScope.drawComplexStroke(stroke: CanvasStroke, offset: Offset) {
 
     when (stroke.shapeType ?: ShapeType.FREEHAND) {
         ShapeType.FREEHAND -> {
-            if (stroke.isHighlighter) {
-                drawHighlighter(stroke, color, offset)
-            } else {
-                when (stroke.penType) {
-                    PenType.FOUNTAIN -> drawFountainPen(stroke, color, offset)
-                    PenType.CALLIGRAPHY -> drawCalligraphy(stroke, color, offset)
-                    else -> drawBallpointPen(stroke, color, offset)
-                }
+            if (stroke.isHighlighter) drawHighlighter(stroke, color, offset)
+            else when (stroke.penType) {
+                PenType.FOUNTAIN -> drawFountainPen(stroke, color, offset)
+                PenType.CALLIGRAPHY -> drawCalligraphy(stroke, color, offset)
+                else -> drawBallpointPen(stroke, color, offset)
             }
         }
         else -> drawShape(stroke, color, offset)
@@ -122,42 +118,15 @@ private fun DrawScope.drawShape(stroke: CanvasStroke, color: Color, offset: Offs
     val p1 = stroke.points.first(); val p2 = stroke.points.last()
     val start = Offset(p1.x + offset.x, p1.y + offset.y); val end = Offset(p2.x + offset.x, p2.y + offset.y)
     val style = DrawStyle(stroke.strokeWidth, join = StrokeJoin.Round)
-
-    val left = min(start.x, end.x); val right = max(start.x, end.x)
-    val top = min(start.y, end.y); val bottom = max(start.y, end.y)
-    val width = abs(end.x - start.x).coerceAtLeast(1f)
-    val height = abs(end.y - start.y).coerceAtLeast(1f)
-
+    val left = min(start.x, end.x); val right = max(start.x, end.x); val top = min(start.y, end.y); val bottom = max(start.y, end.y)
+    val width = abs(end.x - start.x).coerceAtLeast(1f); val height = abs(end.y - start.y).coerceAtLeast(1f)
     when (stroke.shapeType) {
         ShapeType.LINE -> drawLine(color, start, end, stroke.strokeWidth, StrokeCap.Round)
         ShapeType.RECTANGLE -> drawRect(color, Offset(left, top), Size(width, height), style = style)
         ShapeType.CIRCLE -> drawOval(color, Offset(left, top), Size(width, height), style = style)
-        ShapeType.TRIANGLE -> {
-            val path = Path().apply {
-                moveTo(left + width / 2f, top)
-                lineTo(left, bottom)
-                lineTo(right, bottom)
-                close()
-            }
-            drawPath(path, color, style = style)
-        }
-        ShapeType.ARROW -> {
-            val a = atan2(end.y - start.y, end.x - start.x)
-            val headSize = (stroke.strokeWidth * 4f).coerceIn(15f, 50f)
-            drawLine(color, start, end, stroke.strokeWidth, StrokeCap.Round)
-            drawLine(color, end, Offset(end.x - headSize * cos(a - 0.5f).toFloat(), end.y - headSize * sin(a - 0.5f).toFloat()), stroke.strokeWidth, StrokeCap.Round)
-            drawLine(color, end, Offset(end.x - headSize * cos(a + 0.5f).toFloat(), end.y - headSize * sin(a + 0.5f).toFloat()), stroke.strokeWidth, StrokeCap.Round)
-        }
-        ShapeType.STAR -> {
-            val path = Path(); val centerX = left + width / 2f; val centerY = top + height / 2f
-            val outer = min(width, height) / 2f; val inner = outer / 2.5f
-            for (i in 0 until 10) {
-                val r = if (i % 2 == 0) outer else inner; val ang = i * PI / 5 - PI / 2
-                val px = centerX + r * cos(ang).toFloat(); val py = centerY + r * sin(ang).toFloat()
-                if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
-            }
-            path.close(); drawPath(path, color, style = style)
-        }
+        ShapeType.TRIANGLE -> { val path = Path().apply { moveTo(left + width/2f, top); lineTo(left, bottom); lineTo(right, bottom); close() }; drawPath(path, color, style = style) }
+        ShapeType.ARROW -> { val a = atan2(end.y - start.y, end.x - start.x); val headSize = (stroke.strokeWidth * 4f).coerceIn(15f, 50f); drawLine(color, start, end, stroke.strokeWidth, StrokeCap.Round); drawLine(color, end, Offset(end.x - headSize * cos(a - 0.5f).toFloat(), end.y - headSize * sin(a - 0.5f).toFloat()), stroke.strokeWidth, StrokeCap.Round); drawLine(color, end, Offset(end.x - headSize * cos(a + 0.5f).toFloat(), end.y - headSize * sin(a + 0.5f).toFloat()), stroke.strokeWidth, StrokeCap.Round) }
+        ShapeType.STAR -> { val path = Path(); val cx = left + width/2f; val cy = top + height/2f; val outer = min(width, height)/2f; val inner = outer/2.5f; for (i in 0 until 10) { val r = if (i % 2 == 0) outer else inner; val ang = i * PI/5 - PI/2; val px = cx + r * cos(ang).toFloat(); val py = cy + r * sin(ang).toFloat(); if (i == 0) path.moveTo(px, py) else path.lineTo(px, py) }; path.close(); drawPath(path, color, style = style) }
         else -> {}
     }
 }

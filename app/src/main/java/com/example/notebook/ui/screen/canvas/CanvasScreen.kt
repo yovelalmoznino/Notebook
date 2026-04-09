@@ -39,6 +39,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.notebook.data.model.*
 import com.example.notebook.ui.theme.*
@@ -52,51 +54,76 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
     val uiState by viewModel.uiState.collectAsState()
     var showSettingsForTool by remember { mutableStateOf<CanvasTool?>(null) }
     var selectedPageForTemplate by remember { mutableStateOf<Long?>(null) }
-
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { viewModel.addImage(it.toString()) }
-    }
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let { viewModel.addImage(it.toString()) } }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
                     Row(
-                        modifier = Modifier.background(Color.White.copy(alpha = 0.8f), RoundedCornerShape(24.dp)).padding(horizontal = 12.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .background(Color.White.copy(alpha = 0.9f), RoundedCornerShape(32.dp))
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                            .shadow(2.dp, RoundedCornerShape(32.dp)),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        ToolButton(Icons.Rounded.Edit, uiState.activeTool == CanvasTool.PEN) {
-                            if (uiState.activeTool == CanvasTool.PEN) showSettingsForTool = CanvasTool.PEN
-                            else viewModel.setActiveTool(CanvasTool.PEN)
+                        // כפתור עט
+                        Box {
+                            ToolButton(Icons.Rounded.Edit, uiState.activeTool == CanvasTool.PEN) {
+                                if (uiState.activeTool == CanvasTool.PEN) showSettingsForTool = CanvasTool.PEN
+                                else { viewModel.setActiveTool(CanvasTool.PEN); showSettingsForTool = null }
+                            }
+                            if (showSettingsForTool == CanvasTool.PEN) {
+                                ToolSettingsPopup(CanvasTool.PEN, uiState, { showSettingsForTool = null }, viewModel)
+                            }
                         }
-                        ToolButton(Icons.Rounded.Brush, uiState.activeTool == CanvasTool.HIGHLIGHTER) {
-                            if (uiState.activeTool == CanvasTool.HIGHLIGHTER) showSettingsForTool = CanvasTool.HIGHLIGHTER
-                            else viewModel.setActiveTool(CanvasTool.HIGHLIGHTER)
+
+                        // כפתור מרקר
+                        Box {
+                            ToolButton(Icons.Rounded.Brush, uiState.activeTool == CanvasTool.HIGHLIGHTER) {
+                                if (uiState.activeTool == CanvasTool.HIGHLIGHTER) showSettingsForTool = CanvasTool.HIGHLIGHTER
+                                else { viewModel.setActiveTool(CanvasTool.HIGHLIGHTER); showSettingsForTool = null }
+                            }
+                            if (showSettingsForTool == CanvasTool.HIGHLIGHTER) {
+                                ToolSettingsPopup(CanvasTool.HIGHLIGHTER, uiState, { showSettingsForTool = null }, viewModel)
+                            }
                         }
+
                         ToolButton(Icons.Rounded.AutoFixHigh, uiState.activeTool == CanvasTool.ERASER) {
-                            viewModel.setActiveTool(CanvasTool.ERASER)
+                            viewModel.setActiveTool(CanvasTool.ERASER); showSettingsForTool = null
                         }
-                        ToolButton(
-                            icon = when(uiState.activeShape) {
-                                ShapeType.STAR -> Icons.Rounded.Star
-                                ShapeType.TRIANGLE -> Icons.Rounded.ChangeHistory
-                                ShapeType.RECTANGLE -> Icons.Rounded.Square
-                                ShapeType.CIRCLE -> Icons.Rounded.Circle
-                                ShapeType.ARROW -> Icons.Rounded.TrendingFlat
-                                else -> Icons.Rounded.Category
-                            },
-                            isActive = uiState.activeTool == CanvasTool.SHAPE
-                        ) {
-                            if (uiState.activeTool == CanvasTool.SHAPE) showSettingsForTool = CanvasTool.SHAPE
-                            else viewModel.setActiveTool(CanvasTool.SHAPE)
+
+                        // כפתור צורות
+                        Box {
+                            ToolButton(
+                                icon = when(uiState.activeShape) {
+                                    ShapeType.STAR -> Icons.Rounded.Star
+                                    ShapeType.TRIANGLE -> Icons.Rounded.ChangeHistory
+                                    ShapeType.RECTANGLE -> Icons.Rounded.Square
+                                    ShapeType.CIRCLE -> Icons.Rounded.Circle
+                                    ShapeType.ARROW -> Icons.Rounded.TrendingFlat
+                                    else -> Icons.Rounded.Category
+                                },
+                                isActive = uiState.activeTool == CanvasTool.SHAPE
+                            ) {
+                                if (uiState.activeTool == CanvasTool.SHAPE) showSettingsForTool = CanvasTool.SHAPE
+                                else { viewModel.setActiveTool(CanvasTool.SHAPE); showSettingsForTool = null }
+                            }
+                            if (showSettingsForTool == CanvasTool.SHAPE) {
+                                ToolSettingsPopup(CanvasTool.SHAPE, uiState, { showSettingsForTool = null }, viewModel)
+                            }
                         }
 
                         Spacer(modifier = Modifier.width(1.dp).height(24.dp).background(Color.LightGray))
-                        ToolButton(Icons.Rounded.Gesture, uiState.activeTool == CanvasTool.LASSO) { viewModel.setActiveTool(CanvasTool.LASSO) }
+
+                        ToolButton(Icons.Rounded.Gesture, uiState.activeTool == CanvasTool.LASSO) {
+                            viewModel.setActiveTool(CanvasTool.LASSO); showSettingsForTool = null
+                        }
+
                         ToolButton(Icons.Rounded.Image, uiState.activeTool == CanvasTool.IMAGE) {
                             if (uiState.activeTool == CanvasTool.IMAGE) imagePicker.launch("image/*")
-                            else viewModel.setActiveTool(CanvasTool.IMAGE)
+                            else { viewModel.setActiveTool(CanvasTool.IMAGE); showSettingsForTool = null }
                         }
                     }
                 },
@@ -109,23 +136,6 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
             )
         }
     ) { padding ->
-        showSettingsForTool?.let { tool ->
-            UnifiedToolSettingsDialog(
-                tool = tool,
-                uiState = uiState,
-                onDismiss = { showSettingsForTool = null },
-                onUpdate = { color, width, penType, markerShape, shapeType ->
-                    viewModel.updateToolSettings(color.toArgb(), width, tool)
-                    when (tool) {
-                        CanvasTool.PEN -> penType?.let { viewModel.setPenType(it) }
-                        CanvasTool.HIGHLIGHTER -> markerShape?.let { viewModel.setMarkerShape(it) }
-                        CanvasTool.SHAPE -> shapeType?.let { viewModel.setShapeMode(it) }
-                        else -> {}
-                    }
-                }
-            )
-        }
-
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).background(PastelBackground),
             userScrollEnabled = !uiState.isDrawing
@@ -146,51 +156,59 @@ fun CanvasScreen(notebookId: Long, onBack: () -> Unit, viewModel: CanvasViewMode
 }
 
 @Composable
-fun UnifiedToolSettingsDialog(
+fun ToolSettingsPopup(
     tool: CanvasTool,
     uiState: CanvasUiState,
     onDismiss: () -> Unit,
-    onUpdate: (Color, Float, PenType?, MarkerShape?, ShapeType?) -> Unit
+    viewModel: CanvasViewModel
 ) {
-    var selectedColor by remember { mutableStateOf(Color(when(tool) {
-        CanvasTool.HIGHLIGHTER -> uiState.highlighterColor
-        CanvasTool.SHAPE -> uiState.shapeColor
-        else -> uiState.penColor
-    })) }
-    var width by remember { mutableStateOf(when(tool) {
-        CanvasTool.HIGHLIGHTER -> uiState.highlighterWidth
-        CanvasTool.SHAPE -> uiState.shapeWidth
-        else -> uiState.penWidth
-    }) } // תיקון: הוסר סוגר מיותר שהיה כאן
-
-    var currentPenType by remember { mutableStateOf(uiState.activePenType) }
-    var currentMarkerShape by remember { mutableStateOf(uiState.activeMarkerShape) }
-    var currentShapeType by remember { mutableStateOf(uiState.activeShape) }
-
-    val richPalette = listOf(
-        Color(0xFF2D3436), Color(0xFF636E72), Color(0xFFB2BEC3), Color(0xFFDFE6E9), Color.White, Color.Black,
-        Color(0xFFD63031), Color(0xFFE17055), Color(0xFFFDCB6E), Color(0xFFFFEAA7), Color(0xFFFAB1A0), Color(0xFFFF7675),
-        Color(0xFF00B894), Color(0xFF55EFC4), Color(0xFF00CEC9), Color(0xFF81ECEC), Color(0xFF55EFC4), Color(0xFF26DE81),
-        Color(0xFF0984E3), Color(0xFF74B9FF), Color(0xFF6C5CE7), Color(0xFFA29BFE), Color(0xFF45AAF2), Color(0xFF4B7BEC)
-    )
-
-    AlertDialog(
+    Popup(
+        alignment = Alignment.TopCenter,
+        offset = IntOffset(0, 160), // מיקום מתחת לבר העליון
         onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = { onUpdate(selectedColor, width, currentPenType, currentMarkerShape, currentShapeType); onDismiss() }) { Text("Done") } },
-        title = { Text("${tool.name.lowercase().replaceFirstChar { it.uppercase() }} Settings", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Box(modifier = Modifier.fillMaxWidth().height(100.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFFF1F2F6)).border(1.dp, Color.LightGray, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+        properties = PopupProperties(focusable = true)
+    ) {
+        Surface(
+            modifier = Modifier
+                .width(300.dp)
+                .shadow(12.dp, RoundedCornerShape(28.dp)),
+            shape = RoundedCornerShape(28.dp),
+            color = Color.White
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                // 1. תצוגה מקדימה קטנה
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFFF8F9FA))
+                        .border(1.dp, Color(0xFFE9ECEF), RoundedCornerShape(16.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val previewColor = when(tool) {
+                        CanvasTool.HIGHLIGHTER -> uiState.highlighterColor
+                        CanvasTool.SHAPE -> uiState.shapeColor
+                        else -> uiState.penColor
+                    }
+                    val previewWidth = when(tool) {
+                        CanvasTool.HIGHLIGHTER -> uiState.highlighterWidth
+                        CanvasTool.SHAPE -> uiState.shapeWidth
+                        else -> uiState.penWidth
+                    }
+
                     androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
                         val previewStroke = CanvasStroke(
-                            points = if (tool == CanvasTool.SHAPE) listOf(StrokePoint(size.width * 0.3f, size.height * 0.3f, 1f), StrokePoint(size.width * 0.7f, size.height * 0.7f, 1f))
-                            else listOf(StrokePoint(size.width * 0.2f, size.height / 2, 0.5f), StrokePoint(size.width * 0.5f, size.height / 2 - 20, 1f), StrokePoint(size.width * 0.8f, size.height / 2, 0.5f)),
-                            color = selectedColor.toArgb(),
-                            strokeWidth = width,
+                            points = if (tool == CanvasTool.SHAPE)
+                                listOf(StrokePoint(size.width * 0.35f, size.height * 0.35f, 1f), StrokePoint(size.width * 0.65f, size.height * 0.65f, 1f))
+                            else
+                                listOf(StrokePoint(size.width * 0.2f, size.height / 2, 0.5f), StrokePoint(size.width * 0.5f, size.height / 2 - 10, 1f), StrokePoint(size.width * 0.8f, size.height / 2, 0.5f)),
+                            color = previewColor,
+                            strokeWidth = previewWidth,
                             isHighlighter = tool == CanvasTool.HIGHLIGHTER,
-                            penType = currentPenType,
-                            markerShape = currentMarkerShape,
-                            shapeType = if (tool == CanvasTool.SHAPE) currentShapeType else ShapeType.FREEHAND
+                            penType = uiState.activePenType,
+                            markerShape = uiState.activeMarkerShape,
+                            shapeType = if (tool == CanvasTool.SHAPE) uiState.activeShape else ShapeType.FREEHAND
                         )
                         drawComplexStroke(previewStroke, Offset.Zero)
                     }
@@ -198,39 +216,95 @@ fun UnifiedToolSettingsDialog(
 
                 Spacer(Modifier.height(16.dp))
 
-                if (tool == CanvasTool.PEN) {
-                    Text("Pen Style", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PenType.values().forEach { type -> FilterChip(selected = currentPenType == type, onClick = { currentPenType = type }, label = { Text(type.name.lowercase().replaceFirstChar { it.uppercase() }) }) }
-                    }
-                } else if (tool == CanvasTool.HIGHLIGHTER) {
-                    Text("Tip Shape", fontSize = 14.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MarkerShape.values().forEach { shape -> FilterChip(selected = currentMarkerShape == shape, onClick = { currentMarkerShape = shape }, label = { Text(shape.name.lowercase().replaceFirstChar { it.uppercase() }) }) }
-                    }
-                } else if (tool == CanvasTool.SHAPE) {
-                    Text("Select Shape", fontSize = 14.sp)
-                    LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.height(100.dp)) {
-                        items(ShapeType.values().filter { it != ShapeType.FREEHAND }) { type ->
-                            FilterChip(selected = currentShapeType == type, onClick = { currentShapeType = type }, label = { Text(type.name.lowercase().replaceFirstChar { it.uppercase() }) }, modifier = Modifier.padding(2.dp))
+                // 2. הגדרות ספציפיות לכלי
+                when (tool) {
+                    CanvasTool.PEN -> {
+                        Text("Style", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+                            PenType.values().forEach { type ->
+                                FilterChip(
+                                    selected = uiState.activePenType == type,
+                                    onClick = { viewModel.setPenType(type) },
+                                    label = { Text(type.name.lowercase().replaceFirstChar { it.uppercase() }, fontSize = 12.sp) }
+                                )
+                            }
                         }
+                    }
+                    CanvasTool.HIGHLIGHTER -> {
+                        Text("Tip", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+                            MarkerShape.values().forEach { shape ->
+                                FilterChip(
+                                    selected = uiState.activeMarkerShape == shape,
+                                    onClick = { viewModel.setMarkerShape(shape) },
+                                    label = { Text(shape.name.lowercase().replaceFirstChar { it.uppercase() }, fontSize = 12.sp) }
+                                )
+                            }
+                        }
+                    }
+                    CanvasTool.SHAPE -> {
+                        Text("Shapes", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                        LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.height(100.dp).padding(vertical = 8.dp)) {
+                            items(ShapeType.values().filter { it != ShapeType.FREEHAND }) { type ->
+                                FilterChip(
+                                    selected = uiState.activeShape == type,
+                                    onClick = { viewModel.setShapeMode(type) },
+                                    label = { Text(type.name.lowercase().replaceFirstChar { it.uppercase() }, fontSize = 11.sp) },
+                                    modifier = Modifier.padding(2.dp)
+                                )
+                            }
+                        }
+                    }
+                    else -> {}
+                }
+
+                // 3. עובי
+                val currentWidth = if (tool == CanvasTool.HIGHLIGHTER) uiState.highlighterWidth else if (tool == CanvasTool.SHAPE) uiState.shapeWidth else uiState.penWidth
+                Text("Size: ${currentWidth.toInt()}px", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                Slider(
+                    value = currentWidth,
+                    onValueChange = { viewModel.updateToolSettings(if (tool == CanvasTool.HIGHLIGHTER) uiState.highlighterColor else if (tool == CanvasTool.SHAPE) uiState.shapeColor else uiState.penColor, it, tool) },
+                    valueRange = 2f..80f
+                )
+
+                // 4. צבעים
+                Text("Color", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                val colors = listOf(
+                    Color.Black, Color.DarkGray, Color(0xFFD63031), Color(0xFFE17055),
+                    Color(0xFF0984E3), Color(0xFF00CEC9), Color(0xFF6C5CE7), Color(0xFF00B894)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(vertical = 12.dp)) {
+                    colors.forEach { color ->
+                        val isSelected = Color(if (tool == CanvasTool.HIGHLIGHTER) uiState.highlighterColor else if (tool == CanvasTool.SHAPE) uiState.shapeColor else uiState.penColor) == color
+                        Box(
+                            modifier = Modifier
+                                .size(30.dp)
+                                .background(color, CircleShape)
+                                .border(if (isSelected) 3.dp else 0.dp, Color.LightGray, CircleShape)
+                                .clickable { viewModel.updateToolSettings(color.toArgb(), currentWidth, tool) }
+                        )
                     }
                 }
 
-                Spacer(Modifier.height(8.dp))
-                Text("Thickness: ${width.toInt()}px", fontSize = 14.sp)
-                Slider(value = width, onValueChange = { width = it }, valueRange = 2f..80f)
-
-                Spacer(Modifier.height(8.dp))
-                Text("Color", fontSize = 14.sp)
-                LazyVerticalGrid(columns = GridCells.Fixed(6), modifier = Modifier.height(150.dp)) {
-                    items(richPalette) { color ->
-                        Box(modifier = Modifier.size(36.dp).padding(4.dp).background(color, CircleShape).border(if (selectedColor == color) 2.dp else 0.dp, Color.Black, CircleShape).clickable { selectedColor = color })
-                    }
+                Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                    Text("Close")
                 }
             }
         }
-    )
+    }
+}
+
+@Composable
+fun ToolButton(icon: ImageVector, isActive: Boolean, onClick: () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(48.dp)
+            .background(if (isActive) Color(0xFFF1F2F6) else Color.Transparent, CircleShape)
+            .border(if (isActive) 1.5.dp else 0.dp, Color(0xFFDEE2E6), CircleShape)
+    ) {
+        Icon(icon, null, tint = if (isActive) Color.Black else Color.Gray, modifier = Modifier.size(24.dp))
+    }
 }
 
 @Composable
@@ -255,26 +329,8 @@ fun PageContainer(page: PageUiModel, uiState: CanvasUiState, viewModel: CanvasVi
 }
 
 @Composable
-fun ToolButton(icon: ImageVector, isActive: Boolean, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.background(if (isActive) Color(0xFFF1F2F6) else Color.Transparent, CircleShape).border(if (isActive) 1.dp else 0.dp, Color.LightGray, CircleShape)) {
-        Icon(icon, null, tint = if (isActive) Color.Black else Color.Gray)
-    }
-}
-
-@Composable
-fun ToolButtonWithMenu(icon: ImageVector, isActive: Boolean, onClick: () -> Unit, menuContent: @Composable (close: () -> Unit) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        IconButton(onClick = { onClick(); if (isActive) expanded = true }, modifier = Modifier.background(if (isActive) Color(0xFFF1F2F6) else Color.Transparent, CircleShape).border(if (isActive) 1.dp else 0.dp, Color.LightGray, CircleShape)) {
-            Icon(icon, null, tint = if (isActive) Color.Black else Color.Gray)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) { menuContent { expanded = false } }
-    }
-}
-
-@Composable
 fun TemplateSelectionDialog(onDismiss: () -> Unit, onSelect: (PageBackground) -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss, confirmButton = {}, title = { Text("Template") }, text = { Column { PageBackground.values().forEach { type -> TextButton(onClick = { onSelect(type) }, modifier = Modifier.fillMaxWidth()) { Text(type.name) } } } })
+    AlertDialog(onDismissRequest = onDismiss, confirmButton = {}, title = { Text("Page Template") }, text = { Column { PageBackground.values().forEach { type -> TextButton(onClick = { onSelect(type) }, modifier = Modifier.fillMaxWidth()) { Text(type.name) } } } })
 }
 
 @Composable

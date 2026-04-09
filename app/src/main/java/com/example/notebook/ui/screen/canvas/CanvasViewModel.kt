@@ -97,6 +97,7 @@ class CanvasViewModel @Inject constructor(
 
     fun handleMotionEvent(pageId: Long, event: MotionEvent) {
         val toolType = event.getToolType(0)
+        // אם זו אצבע והלאסו לא פעיל - תן לה לגלול (חזרה ל-View)
         if (toolType == MotionEvent.TOOL_TYPE_FINGER && _uiState.value.activeTool != CanvasTool.LASSO) return
 
         val x = event.x; val y = event.y
@@ -181,7 +182,6 @@ class CanvasViewModel @Inject constructor(
         _uiState.value.currentStroke?.let { s ->
             val lastPoint = s.points.lastOrNull()
             if (lastPoint != null && hypot(x - lastPoint.x, y - lastPoint.y) < 1f && s.shapeType == ShapeType.FREEHAND) return
-
             val points = if (s.shapeType == ShapeType.FREEHAND) {
                 s.points + StrokePoint(x, y, pressure)
             } else {
