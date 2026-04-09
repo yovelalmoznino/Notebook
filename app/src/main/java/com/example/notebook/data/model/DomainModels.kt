@@ -2,12 +2,10 @@ package com.example.notebook.data.model
 
 import com.example.notebook.data.db.entity.PageEntity
 
-/**
- * הגדרות של כלי הציור והקנבס
- */
+// ── כלי ציור ──────────────────────────────────────────────────────────
 enum class CanvasTool { PEN, HIGHLIGHTER, ERASER, SHAPE, LASSO, IMAGE }
 
-enum class PageBackground { PLAIN, LINES, GRID, DOTS }
+enum class PageBackground { PLAIN, RULED, GRID, DOT_GRID, MUSIC_LINES }
 
 enum class ShapeType { FREEHAND, LINE, RECTANGLE, CIRCLE, TRIANGLE, ARROW, STAR }
 
@@ -41,9 +39,7 @@ data class CanvasImage(
     val height: Float
 )
 
-/**
- * מודלים עבור ה-Dashboard (תיקיות ומחברות)
- */
+// ── Dashboard models ───────────────────────────────────────────────────
 data class Folder(
     val id: Long,
     val name: String,
@@ -62,9 +58,6 @@ data class Notebook(
     val strokeDataJson: String
 )
 
-/**
- * המודל שמחבר בין הדף מהדאטהבייס לתוכן הציור (חיוני ל-ViewModel)
- */
 data class PageUiModel(
     val page: PageEntity,
     val strokes: List<Stroke>,
